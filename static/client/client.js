@@ -175,11 +175,33 @@ function authLayout(content, { wide = false } = {}) {
 const NAV = [
   { key: 'requests', href: '#/demandes', label: 'Mes demandes', icon: 'layers' },
   { key: 'new', href: '#/demandes/nouvelle', label: 'Nouvelle demande', icon: 'plus' },
-  { key: 'requested', href: '#/documents-demandes', label: 'Documents demandés', icon: 'upload' },
-  { key: 'shared', href: '#/documents-transmis', label: 'Documents transmis', icon: 'download' },
-  { key: 'documents', href: '#/documents', label: 'Mes documents', icon: 'folder' },
+  { key: 'documents', href: '#/documents-demandes', label: 'Documents', icon: 'folder' },
   { key: 'account', href: '#/compte', label: 'Mon compte', icon: 'users' },
 ];
+// Les trois vues documentaires partagent l'entrée « Documents » et des onglets.
+const NAV_GROUP = { requested: 'documents', shared: 'documents', documents: 'documents' };
+const DOC_TABS = [
+  { key: 'requested', href: '#/documents-demandes', label: 'À fournir' },
+  { key: 'shared', href: '#/documents-transmis', label: 'Reçus de FRAMATEX' },
+  { key: 'documents', href: '#/documents', label: 'Mes dépôts' },
+];
+const PENDING_DOC = new Set(['requested', 'correction_required']);
+
+function docTabs(active) {
+  return `<nav class="doc-tabs" aria-label="Documents">${DOC_TABS.map(t => `<a class="doc-tab${t.key === active ? ' is-active' : ''}" href="${t.href}"${t.key === active ? ' aria-current="page"' : ''}>${t.label}${t.key === 'requested' ? '<span class="nav-badge" data-pending-docs hidden></span>' : ''}</a>`).join('')}</nav>`;
+}
+
+// Nombre de pièces à fournir : affiché sur l'entrée « Documents » et l'onglet « À fournir ».
+async function refreshPendingBadge() {
+  try {
+    const items = await source.listDocumentRequests();
+    const n = items.filter(item => PENDING_DOC.has(item.status)).length;
+    app.querySelectorAll('[data-pending-docs]').forEach(badge => {
+      badge.textContent = n; badge.hidden = !n;
+      badge.setAttribute('aria-label', `${n} pièce${n > 1 ? 's' : ''} à fournir`);
+    });
+  } catch { /* le badge est un confort : son absence ne bloque rien */ }
+}
 
 function identity() {
   const c = state.client || {};
@@ -191,7 +213,8 @@ function identity() {
 }
 
 function navList(active) {
-  return `<ul class="nav-list">${NAV.map(n => `<li><a class="nav-link${n.key === active ? ' is-active' : ''}" href="${n.href}"${n.key === active ? ' aria-current="page"' : ''}>${icon(n.icon)}<span>${n.label}</span></a></li>`).join('')}</ul>`;
+  const current = NAV_GROUP[active] || active;
+  return `<ul class="nav-list">${NAV.map(n => `<li><a class="nav-link${n.key === current ? ' is-active' : ''}" href="${n.href}"${n.key === current ? ' aria-current="page"' : ''}>${icon(n.icon)}<span>${n.label}</span>${n.key === 'documents' ? '<span class="nav-badge" data-pending-docs hidden></span>' : ''}</a></li>`).join('')}</ul>`;
 }
 
 function shellLayout(active, content) {
@@ -250,6 +273,7 @@ function mountShell(active, content) {
   app.querySelectorAll('[data-logout]').forEach(b => b.addEventListener('click', logout));
   app.querySelector('[data-drawer-open]')?.addEventListener('click', openDrawer);
   app.querySelectorAll('[data-drawer-close]').forEach(b => b.addEventListener('click', closeDrawer));
+  refreshPendingBadge();
 }
 
 function openDrawer() {
@@ -740,6 +764,32 @@ function bindDownloads(root) {
   }));
 }
 
+// Pièces demandées par FRAMATEX et documents transmis, pour cette demande seulement.
+async function loadRequestExchanges(r, body) {
+  const asked = body.querySelector('#req-asked'), received = body.querySelector('#req-received');
+  const [requests, shared] = await Promise.allSettled([source.listDocumentRequests(), source.listSharedDocuments()]);
+  if (requests.status === 'fulfilled') {
+    const items = requests.value.filter(item => item.order_request_id === r.id);
+    asked.innerHTML = items.length ? `<ul class="exchange-list">${items.map(item => `<li>
+        <div><a class="text-link" href="#/documents-demandes/${encodeURIComponent(item.id)}">${esc(item.title)}</a><span class="doc-sub">Demandé le ${fmtDate(item.requested_at)}</span></div>
+        ${documentStatusBadge(item.status)}</li>`).join('')}</ul>`
+      : '<p class="muted-box">Aucune pièce demandée par FRAMATEX pour cette demande.</p>';
+  } else asked.innerHTML = '<p class="muted-box">Liste momentanément indisponible.</p>';
+  if (shared.status === 'fulfilled') {
+    const items = shared.value.filter(item => item.order_request_id === r.id);
+    received.innerHTML = items.length ? `<ul class="exchange-list">${items.map(item => `<li>
+        <div><strong>${esc(item.title)}</strong><span class="doc-sub">V${item.version} · ${esc(item.original_name)} · ${fmtDate(item.published_at)}</span></div>
+        <button type="button" class="btn btn-secondary btn-sm" data-shared-download="${esc(item.id)}" data-file="${esc(item.original_name)}">${icon('download')}Télécharger</button></li>`).join('')}</ul>`
+      : '<p class="muted-box">Aucun document transmis par FRAMATEX pour cette demande.</p>';
+    received.querySelectorAll('[data-shared-download]').forEach(button => button.addEventListener('click', async () => {
+      setLoading(button, true, 'Préparation…');
+      try { await source.downloadSharedDocument(button.dataset.sharedDownload, button.dataset.file); }
+      catch (err) { toast(messageFor(err), 'warn'); }
+      finally { setLoading(button, false); }
+    }));
+  } else received.innerHTML = '<p class="muted-box">Liste momentanément indisponible.</p>';
+}
+
 async function viewRequestDetail({ id }) {
   mountShell('requests', `<a class="back-link" href="#/demandes">${icon('back')}Mes demandes</a><div id="detail-body">${loadingState('Chargement de la demande…')}</div>`);
   const body = app.querySelector('#detail-body');
@@ -772,7 +822,7 @@ async function viewRequestDetail({ id }) {
 
         <section class="card" aria-labelledby="docs-title">
           <div class="card-head">
-            <h2 class="card-title" id="docs-title">Documents liés à cette demande</h2>
+            <h2 class="card-title" id="docs-title">Vos documents déposés</h2>
             <span class="count">${docs.length}</span>
           </div>
           <div id="docs-zone">${docs.length ? documentsTable(docs) : '<p class="muted-box">Aucun document pour le moment.</p>'}</div>
@@ -782,6 +832,14 @@ async function viewRequestDetail({ id }) {
             <div class="form-actions form-actions-tight"><button class="btn btn-primary" type="submit">${icon('upload')}Déposer les documents</button></div>
           </form>
         </section>
+
+        <section class="card" aria-labelledby="exchange-title" id="request-exchanges">
+          <h2 class="card-title" id="exchange-title">Échanges avec FRAMATEX</h2>
+          <div class="exchange-grid">
+            <div><h3 class="exchange-title">Documents demandés</h3><div id="req-asked">${loadingState()}</div></div>
+            <div><h3 class="exchange-title">Documents reçus</h3><div id="req-received">${loadingState()}</div></div>
+          </div>
+        </section>
       </div>
 
       <aside class="detail-side">
@@ -790,7 +848,6 @@ async function viewRequestDetail({ id }) {
           <p class="side-status">${statusBadge(r.status)}</p>
           <p class="side-text">${esc(s?.help || '')}</p>
           ${r.status === 'draft' ? '<button class="btn btn-primary btn-sm" id="submit-draft" type="button">Envoyer le brouillon</button>' : ''}
-          <p><a class="text-link" href="#/documents-demandes">Documents demandés par FRAMATEX</a></p>
         </section>
         <section class="card card-quiet" aria-labelledby="help-title">
           <h2 class="card-title" id="help-title">Une question ?</h2>
@@ -800,6 +857,7 @@ async function viewRequestDetail({ id }) {
       </aside>
     </div>`;
   bindDownloads(body);
+  loadRequestExchanges(r, body);
   body.querySelector('#submit-draft')?.addEventListener('click', async () => {
     try { await source.submitOrderRequest(r.id); go(`/demandes/${encodeURIComponent(r.id)}`); }
     catch (err) { toast(messageFor(err), 'warn'); }
@@ -840,7 +898,7 @@ async function loadAllDocuments() {
 }
 
 async function viewDocuments() {
-  mountShell('documents', `${pageHead({ title: 'Mes documents', lead: 'Documents déposés sur vos demandes de commande, toutes demandes confondues.' })}<div id="docs-body">${loadingState('Chargement des documents…')}</div>`);
+  mountShell('documents', `${pageHead({ title: 'Documents', lead: 'Les fichiers que vous avez déposés sur vos demandes, toutes demandes confondues.' })}${docTabs('documents')}<div id="docs-body">${loadingState('Chargement des documents…')}</div>`);
   const body = app.querySelector('#docs-body');
   let docs;
   try { docs = await loadAllDocuments(); } catch (err) { handleScreenError(err, body); return; }
@@ -869,7 +927,7 @@ async function viewDocuments() {
 // --------------------------------------------------------------------------
 // Pièces attendues et transmissions explicites de FRAMATEX (composants existants).
 async function viewDocumentRequests() {
-  mountShell('requested', `${pageHead({ title: 'Documents demandés par FRAMATEX', lead: 'Les pièces attendues, leurs versions et les retours de FRAMATEX.' })}<div id="requested-body">${loadingState()}</div>`);
+  mountShell('requested', `${pageHead({ title: 'Documents', lead: 'Les pièces que FRAMATEX vous demande, leurs versions et ses retours.' })}${docTabs('requested')}<div id="requested-body">${loadingState()}</div>`);
   const body = app.querySelector('#requested-body');
   try {
     const items = await source.listDocumentRequests();
@@ -882,7 +940,7 @@ async function viewDocumentRequests() {
 }
 
 async function viewDocumentRequest({ id }) {
-  mountShell('requested', `${pageHead({ title: 'Pièce demandée par FRAMATEX', back: `<a class="back-link" href="#/documents-demandes">${icon('back')}Documents demandés</a>` })}<div id="requested-detail">${loadingState()}</div>`);
+  mountShell('requested', `${pageHead({ title: 'Pièce demandée par FRAMATEX', back: `<a class="back-link" href="#/documents-demandes">${icon('back')}Documents à fournir</a>` })}<div id="requested-detail">${loadingState()}</div>`);
   const body = app.querySelector('#requested-detail');
   try {
     const item = await source.getDocumentRequest(id);
@@ -917,7 +975,7 @@ async function viewDocumentRequest({ id }) {
 }
 
 async function viewSharedDocuments() {
-  mountShell('shared', `${pageHead({ title: 'Documents transmis par FRAMATEX', lead: 'Les versions que FRAMATEX a explicitement partagées avec votre entreprise.' })}<div id="shared-body">${loadingState()}</div>`);
+  mountShell('shared', `${pageHead({ title: 'Documents', lead: 'Les versions que FRAMATEX a explicitement partagées avec votre entreprise.' })}${docTabs('shared')}<div id="shared-body">${loadingState()}</div>`);
   const body = app.querySelector('#shared-body');
   try {
     const items = await source.listSharedDocuments();

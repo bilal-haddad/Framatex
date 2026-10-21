@@ -335,6 +335,29 @@ h1:focus { outline: none; }
 .toast-warn .ico { color: #f3c47a; }
 
 /* ---------- Responsive ---------- */
+/* Documents : une entrée de menu, trois onglets */
+.nav-badge { margin-left: auto; display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-line); font: 700 11px/1 var(--font); font-variant-numeric: tabular-nums; }
+.doc-tabs { display: flex; gap: 4px; margin: -12px 0 20px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.doc-tabs::-webkit-scrollbar { display: none; }
+.doc-tab { position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 11px 14px 12px; font-weight: 600; font-size: 14px; color: var(--muted); text-decoration: none; white-space: nowrap; }
+.doc-tab::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px; background: transparent; transition: background .16s ease; }
+.doc-tab:hover { color: var(--ink); }
+.doc-tab.is-active { color: var(--navy); }
+.doc-tab.is-active::after { background: var(--cyan); }
+.doc-tab:focus-visible { outline: none; box-shadow: inset 0 0 0 3px var(--cyan-soft); border-radius: 6px; }
+.doc-tab .nav-badge { margin-left: 0; }
+
+/* Demande : échanges avec FRAMATEX */
+.exchange-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.exchange-title { margin: 0 0 8px; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.exchange-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.exchange-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.exchange-list li:last-child { border-bottom: 0; }
+.exchange-list li { min-width: 0; }
+.exchange-list li > div { flex: 1 1 auto; min-width: 0; }
+.exchange-list li > .btn, .exchange-list li > .badge { flex: none; }
+.exchange-grid .muted-box { padding: 14px; font-size: 13px; text-align: left; }
+
 @media (max-width: 1180px) {
   .page { padding: 32px 28px 56px; }
   .detail-grid { grid-template-columns: minmax(0, 1fr); }
@@ -377,6 +400,7 @@ h1:focus { outline: none; }
 }
 
 @media (max-width: 760px) {
+  .exchange-grid { grid-template-columns: minmax(0, 1fr); }
   .grid-2 { grid-template-columns: minmax(0, 1fr); }
   .info-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .detail-side, .account-grid { grid-template-columns: minmax(0, 1fr); }
@@ -392,6 +416,8 @@ h1:focus { outline: none; }
 }
 
 @media (max-width: 640px) {
+  .doc-tabs { margin-top: -8px; }
+  .doc-tab { padding: 10px 9px 11px; font-size: 13.5px; gap: 6px; }
   .pub-header-inner { padding: 0 16px; height: 64px; }
   .brand img { width: 42px; height: 42px; }
   .brand-label { font-size: 11px; padding-left: 10px; letter-spacing: .12em; }
