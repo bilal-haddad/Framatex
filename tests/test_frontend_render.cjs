@@ -20,7 +20,7 @@ const output=vm.runInContext(`(()=>{
   ]};
  return renderCompleteness();
 })()`,ctx);
-for (const value of ['Complétude documentaire','Fiche d’emploi','Pièce manquante','Non encore exigible','Justifier','Profil de test']) {
+for (const value of ['Complétude documentaire','Fiche d’emploi','Pièce manquante','Non applicable','Justifier','Profil de test']) {
  assert(output.includes(value), 'UI missing: '+value);
 }
 assert(!output.includes('undefined'), 'Le rendu contient undefined');

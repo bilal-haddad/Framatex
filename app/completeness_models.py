@@ -65,3 +65,15 @@ class RequirementException(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     recorded_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class DuplicateReview(Base):
+    """Doublon examiné : les versions identiques citées sont conservées volontairement (motif obligatoire)."""
+    __tablename__ = "document_duplicate_reviews"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    launch_id: Mapped[str] = mapped_column(ForeignKey("launches.id"), index=True)
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
+    version_ids: Mapped[str] = mapped_column(Text)          # liste JSON des versions examinées
+    reason: Mapped[str] = mapped_column(Text)
+    decided_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

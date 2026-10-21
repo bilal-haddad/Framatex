@@ -10,9 +10,11 @@ const DJ_FOLDERS = {
   bleu: {name: 'Dédouanement', color: 'Bleu', order: '03'},
   vert: {name: 'Factures', color: 'Vert', order: '04'},
 };
+// États affichés d'une ligne. « Doublon détecté » se superpose à l'état du moteur de
+// complétude (la pièce reste présente) tant que le doublon n'est pas examiné.
 const DJ_STATES = {
   present: ['Présent', 'ok'], missing: ['Manquant', 'missing'], pending_validation: ['En validation', 'pending'],
-  not_due: ['Non exigible', 'idle'], exception: ['Exception', 'exception'],
+  exception: ['Exception', 'exception'], duplicate: ['Doublon détecté', 'duplicate'], not_due: ['Non applicable', 'idle'],
 };
 const DJ_TABS = [['documents', 'Documents'], ['controles', 'Contrôles'], ['communication', 'Communication'], ['historique', 'Historique']];
 const DJ_MODULES = {
@@ -63,16 +65,17 @@ state.dj = djInitialUi();
 // --------------------------------------------------------------------------- chargement
 async function djLoadExtras(id) {
   const enc = encodeURIComponent(id);
-  const [summary, notes, activity] = await Promise.all([
+  const [summary, notes, activity, duplicates] = await Promise.all([
     api(`/api/launches/${enc}/operations`),
     can('document.read', 'jaune') ? api(`/api/launches/${enc}/experience-notes`).catch(() => []) : Promise.resolve([]),
     can('audit.read') ? api(`/api/workspace/activity?launch_id=${enc}&limit=40`).catch(() => null) : Promise.resolve(null),
+    api(`/api/launches/${enc}/duplicates`).catch(() => []),
   ]);
   let request = null;
   if (summary.client_request && state.me?.admin) {
     request = await api(`/api/admin/client-order-requests/${encodeURIComponent(summary.client_request.id)}`).catch(() => null);
   }
-  return {operationsDetail: summary, djNotes: notes, djActivity: activity, djClientRequest: request};
+  return {operationsDetail: summary, djNotes: notes, djActivity: activity, djClientRequest: request, djDuplicates: duplicates};
 }
 
 const djOriginalOpenLaunch = openLaunch;
@@ -103,11 +106,16 @@ function djApplyTarget(target) {
   }
   const rows = state.completeness?.rows || [];
   const rule = rows.find(r => r.id === target.rule_id)
+    || rows.find(r => target.row_document && r.documents.some(d => d.id === target.row_document))
     || rows.find(r => target.title && r.folder === state.folder && r.title === target.title);
   if (rule) {
     state.folder = rule.folder;
     state.dj.tab = 'documents';
     state.dj.highlight = rule.id;
+  } else if (target.row_document) {
+    // Pièce hors checklist : ligne « Autres pièces » de son sous-dossier.
+    const folder = state.detail.folders.find(f => (f.documents || []).some(doc => doc.id === target.row_document));
+    if (folder) { state.folder = folder.slug; state.dj.tab = 'documents'; state.dj.highlight = 'doc:' + target.row_document; }
   }
 }
 
@@ -115,6 +123,16 @@ function djApplyTarget(target) {
 function djDocIndex() {
   const index = new Map();
   for (const folder of state.detail.folders) for (const doc of folder.documents || []) index.set(doc.id, doc);
+  return index;
+}
+
+// Doublons non examinés : document → groupe (même SHA-256 dans le dossier).
+function djDuplicateIndex() {
+  const index = new Map();
+  for (const group of state.djDuplicates || []) {
+    if (group.reviewed) continue;
+    for (const doc of group.documents) index.set(doc.document_id, group);
+  }
   return index;
 }
 
@@ -126,8 +144,15 @@ function djFolderStats(slug) {
     present: due.filter(r => r.status === 'present').length,
     missing: due.filter(r => r.status === 'missing').length,
     pending: rows.filter(r => r.status === 'pending_validation').length,
+    duplicates: (state.djDuplicates || []).filter(g => !g.reviewed && g.documents.some(d => d.folder === slug)).length,
     upcoming: rows.filter(r => r.required !== false && !r.due).length,
   };
+}
+
+// État affiché d'une ligne de checklist (doublon prioritaire sur l'état du moteur).
+function djRowState(rule, duplicates = djDuplicateIndex()) {
+  const group = rule.documents.map(d => duplicates.get(d.id)).find(Boolean);
+  return group ? {status: 'duplicate', group} : {status: rule.status, group: null};
 }
 
 function djSortedRows(slug) {
@@ -155,16 +180,16 @@ function djHeader() {
     djFact('Référence client', e(request?.reference_client || '—')),
     ...(d.orli_ref ? [djFact('Référence ORLI', e(d.orli_ref))] : []),
     djFact('État', statusTag(d.status)),
+    ...(c.configured ? [djFact('Étape de la commande', `${e(phaseLabel(c.phase))}${c.can_change_context ? ' <button class="link dj-fact-link" id="dj-edit-phase">Changer</button>' : ''}`)] : []),
   ].join('');
   const percent = completion.percent ?? null;
   const progress = c.configured
     ? `<div class="dj-progress">
         <div class="dj-progress-text"><span class="dj-label">Complétude</span>
-          <strong>${completion.present_due ?? 0} / ${completion.due_count ?? 0}</strong><span>pièces exigibles présentes</span>
+          <strong>${completion.present_due ?? 0} / ${completion.due_count ?? 0}</strong><span>pièces obligatoires présentes</span>
           <span class="dj-state is-${completion.state === 'complete' ? 'ok' : completion.state === 'incomplete' ? 'missing' : 'idle'}">${e(OPS_STATES[completion.state] || '—')}</span></div>
         <div class="dj-bar" role="img" aria-label="Complétude ${percent ?? 0} %"><span style="width:${percent ?? 0}%"></span></div>
-        <div class="dj-phase"><span class="dj-label">Étape</span><strong>${e(phaseLabel(c.phase))}</strong>
-          ${c.can_change_context ? `<button class="link" id="dj-edit-phase">Changer l’étape</button>` : ''}</div>
+        ${djDossierTally()}
       </div>`
     : `<div class="dj-progress dj-progress-empty"><span class="dj-label">Complétude</span><span>Aucune checklist associée pour l’instant.</span>
         ${c.can_change_context ? `<button class="secondary tiny" id="dj-apply-standard">Appliquer la checklist standard</button>` : ''}</div>`;
@@ -202,12 +227,13 @@ function djFolderCards() {
       ? `<strong class="dj-folder-count">${st.present} / ${st.due}</strong><span class="dj-folder-unit">documents présents</span>`
       : `<strong class="dj-folder-count dj-folder-count-idle">${(folder.documents || []).length}</strong><span class="dj-folder-unit">${(folder.documents || []).length > 1 ? 'documents déposés' : 'document déposé'} · rien d’exigible</span>`;
     const notes = [st.missing ? `<span class="is-missing">${st.missing} manquant${st.missing > 1 ? 's' : ''}</span>` : '',
-      st.pending ? `<span class="is-pending">${st.pending} à valider</span>` : '',
-      !st.missing && !st.pending && st.due ? '<span class="is-ok">Complet</span>' : '',
+      st.pending ? `<span class="is-pending">${st.pending} en validation</span>` : '',
+      st.duplicates ? `<span class="is-duplicate">${st.duplicates} doublon${st.duplicates > 1 ? 's' : ''}</span>` : '',
+      !st.missing && !st.pending && !st.duplicates && st.due ? '<span class="is-ok">Complet</span>' : '',
       !st.due && st.upcoming ? `<span>${st.upcoming} à venir</span>` : ''].filter(Boolean).join('');
     return `<button class="folder-card dj-folder ${selected ? 'selected' : ''}" data-folder="${folder.slug}" aria-pressed="${selected}">
       <span class="dj-folder-top"><span class="dj-folder-name">${e(meta.name)}</span><span class="dj-folder-code">${meta.color} · ${meta.order}</span></span>
-      <span class="dj-folder-figure">${count}</span>
+      <span class="dj-folder-body"><span class="dj-folder-figure">${count}</span>${djRing(ratio)}</span>
       <span class="dj-bar dj-folder-bar"><span style="width:${ratio}%"></span></span>
       <span class="dj-folder-meta">${notes || '<span>&nbsp;</span>'}</span></button>`;
   }).join('')}</div>`;
@@ -219,18 +245,21 @@ function djStatePill(status) {
   return `<span class="dj-state is-${tone}">${e(label)}</span>`;
 }
 
-function djRow(rule, docs, folder) {
+function djRow(rule, docs, folder, duplicates = djDuplicateIndex()) {
   const doc = rule.documents.length ? docs.get(rule.documents[0].id) : null;
   const latest = doc?.latest;
+  const {status, group} = djRowState(rule, duplicates);
   const subs = [];
   if (doc && doc.title !== rule.title && doc.title !== rule.document_type) subs.push(e(doc.title));
-  if (rule.documents.length > 1) subs.push(`+ ${rule.documents.length - 1} autre(s) pièce(s) de ce type`);
-  if (rule.status === 'not_due' && rule.required !== false) subs.push(`Exigible dès l’étape ${e(phaseLabel(rule.due_phase))}`);
-  if (rule.required === false) subs.push('Facultatif');
-  if (rule.status === 'pending_validation') subs.push('Validation requise');
+  if (group) subs.push(djDuplicateHint(group, rule.documents.slice(0, 1).map(d => d.id)));
+  else if (rule.documents.length > 1) subs.push(`+ ${rule.documents.length - 1} autre(s) pièce(s) de ce type`);
+  if (rule.status === 'not_due') subs.push(rule.required === false ? 'Facultatif · à déposer si besoin' : 'Non exigée par le profil de ce dossier');
+  if (status === 'pending_validation') subs.push('Validation requise');
   if (rule.status === 'exception') subs.push(`Exception : ${e(rule.exception_reason || 'justifiée')}`);
   let action = '<span class="dj-none" aria-hidden="true">—</span>';
-  if (rule.status === 'missing' && folder.can_write) {
+  if (group) {
+    action = `<button class="secondary tiny dj-dup-btn" data-dj-duplicate="${e(group.sha256)}">Examiner le doublon</button>`;
+  } else if (rule.status === 'missing' && folder.can_write) {
     action = `<button class="secondary tiny dj-upload-btn" data-dj-upload="${e(rule.id)}">${icon('upload')} Déposer</button>`;
   } else if (rule.status === 'pending_validation' && doc) {
     action = `${rule.can_review ? `<button class="primary tiny" data-complete-validate="${e(rule.id)}">${icon('check')} Valider</button>` : ''}<button class="secondary tiny" data-history="${e(doc.id)}">Examiner</button>`;
@@ -239,13 +268,43 @@ function djRow(rule, docs, folder) {
   } else if (rule.status === 'not_due' && folder.can_write) {
     action = `<button class="link" data-dj-upload="${e(rule.id)}">Déposer</button>`;
   }
-  const status = DJ_STATES[rule.status]?.[1] || 'idle';
-  return `<tr class="dj-row is-${status}" data-rule="${e(rule.id)}">
+  const tone = DJ_STATES[status]?.[1] || 'idle';
+  return `<tr class="dj-row is-${tone}" data-rule="${e(rule.id)}" data-state="${status}">
     <td data-label="Document"><strong>${e(rule.title)}</strong>${subs.length ? `<small>${subs.join(' · ')}</small>` : ''}</td>
-    <td data-label="État">${djStatePill(rule.status)}</td>
+    <td data-label="État">${djStatePill(status)}</td>
     <td data-label="Dernière version" class="${latest ? '' : 'is-empty'}">${latest ? `V${latest.number}` : '—'}</td>
     <td data-label="Date" class="${latest ? '' : 'is-empty'}">${latest ? niceDate(latest.created_at) : '—'}</td>
     <td class="dj-action" data-label="Action"><span class="dj-action-group">${action}</span></td></tr>`;
+}
+
+// « Identique à … » : la ou les autres pièces du groupe, avec leur sous-dossier.
+function djDuplicateHint(group, ownIds) {
+  const others = group.documents.filter(d => !ownIds.includes(d.document_id));
+  const shown = (others.length ? others : group.documents.slice(1)).slice(0, 2)
+    .map(d => `« ${e(d.title)} »${d.folder !== state.folder ? ` (${e(DJ_FOLDERS[d.folder]?.name || d.folder)})` : ''}`);
+  return `Contenu identique à ${shown.join(', ')}`;
+}
+
+// Anneau de progression d'une carte de sous-dossier (SVG, sans texte).
+function djRing(ratio) {
+  const r = 15, length = 2 * Math.PI * r;
+  return `<svg class="dj-ring" viewBox="0 0 36 36" aria-hidden="true" focusable="false"><circle class="dj-ring-track" cx="18" cy="18" r="${r}"/>
+    <circle class="dj-ring-value" cx="18" cy="18" r="${r}" stroke-dasharray="${length.toFixed(2)}" stroke-dashoffset="${(length * (1 - ratio / 100)).toFixed(2)}"/></svg>`;
+}
+
+// Synthèse du dossier : un compteur par état, lisible d'un coup d'œil.
+function djDossierTally() {
+  const rows = state.completeness?.rows || [];
+  const duplicates = djDuplicateIndex();
+  const counts = {present: 0, missing: 0, pending_validation: 0, duplicate: 0, exception: 0};
+  for (const rule of rows) { const {status} = djRowState(rule, duplicates); if (status in counts) counts[status] += 1; }
+  const groups = (state.djDuplicates || []).filter(g => !g.reviewed).length;
+  counts.duplicate = groups;
+  const items = [['present', 'présent', 'présents'], ['missing', 'manquant', 'manquants'], ['pending_validation', 'en validation', 'en validation'],
+    ['duplicate', 'doublon', 'doublons'], ['exception', 'exception', 'exceptions']]
+    .filter(([key]) => key !== 'exception' || counts.exception)
+    .map(([key, one, many]) => `<li class="dj-tally-item is-${DJ_STATES[key][1]}${counts[key] ? '' : ' is-zero'}"><strong>${counts[key]}</strong> ${counts[key] > 1 ? many : one}</li>`).join('');
+  return `<ul class="dj-tally" aria-label="Synthèse des pièces">${items}</ul>`;
 }
 
 function djDocumentsPanel() {
@@ -255,6 +314,7 @@ function djDocumentsPanel() {
     return `<div class="detail-layout dj-docs"><div class="dj-empty">${icon('lock')}<p>Votre rôle ne donne pas accès au sous-dossier ${e(meta.name)}.</p></div></div>`;
   }
   const docs = djDocIndex();
+  const duplicates = djDuplicateIndex();
   const rows = djSortedRows(folder.slug);
   const used = new Set(rows.flatMap(r => r.documents.slice(0, 1).map(x => x.id)));
   const others = (folder.documents || []).filter(doc => !used.has(doc.id));
@@ -263,18 +323,20 @@ function djDocumentsPanel() {
     ? `<div class="dj-table-wrap"><table class="dj-checklist"><caption class="sr-only">Checklist ${e(meta.name)}</caption>
         <colgroup><col class="dj-c-doc"><col class="dj-c-state"><col class="dj-c-ver"><col class="dj-c-date"><col class="dj-c-act"></colgroup>
         <thead><tr><th scope="col">Document</th><th scope="col">État</th><th scope="col">Dernière version</th><th scope="col">Date</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
-        <tbody>${rows.map(rule => djRow(rule, docs, folder)).join('')}</tbody></table></div>`
+        <tbody>${rows.map(rule => djRow(rule, docs, folder, duplicates)).join('')}</tbody></table></div>`
     : `<div class="dj-empty"><p>${configured ? 'Aucune pièce attendue dans ce sous-dossier pour ce profil.' : 'Ce dossier n’a pas encore de checklist documentaire.'}</p>
         ${!configured && state.completeness?.can_change_context ? '<button class="secondary tiny" id="dj-apply-standard-inline">Appliquer la checklist standard</button>' : ''}</div>`;
   const otherTable = others.length
     ? `<section class="dj-others"><h3>Autres pièces du sous-dossier</h3><div class="dj-table-wrap"><table class="dj-checklist dj-other-table">
         <colgroup><col class="dj-c-doc"><col class="dj-c-state"><col class="dj-c-ver"><col class="dj-c-date"><col class="dj-c-act"></colgroup>
         <thead><tr><th scope="col">Document</th><th scope="col">Type</th><th scope="col">Dernière version</th><th scope="col">Date</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
-        <tbody>${others.map(doc => `<tr class="dj-row"><td data-label="Document"><strong>${e(doc.title)}</strong><small>${e(doc.latest.original_name)}</small></td>
-          <td data-label="Type">${e(doc.doc_type)}</td><td data-label="Dernière version">V${doc.latest.number}</td><td data-label="Date">${niceDate(doc.latest.created_at)}</td>
-          <td class="dj-action" data-label="Action"><span class="dj-action-group"><button class="secondary tiny" data-history="${e(doc.id)}">Ouvrir</button></span></td></tr>`).join('')}</tbody></table></div></section>`
+        <tbody>${others.map(doc => { const group = duplicates.get(doc.id);
+          return `<tr class="dj-row${group ? ' is-duplicate' : ''}" data-doc="${e(doc.id)}"${group ? ' data-state="duplicate"' : ''}><td data-label="Document"><strong>${e(doc.title)}</strong><small>${e(doc.latest.original_name)}${group ? ` · ${djDuplicateHint(group, [doc.id])}` : ''}</small></td>
+          <td data-label="Type">${group ? djStatePill('duplicate') : e(doc.doc_type)}</td><td data-label="Dernière version">V${doc.latest.number}</td><td data-label="Date">${niceDate(doc.latest.created_at)}</td>
+          <td class="dj-action" data-label="Action"><span class="dj-action-group">${group ? `<button class="secondary tiny dj-dup-btn" data-dj-duplicate="${e(group.sha256)}">Examiner le doublon</button>` : `<button class="secondary tiny" data-history="${e(doc.id)}">Ouvrir</button>`}</span></td></tr>`; }).join('')}</tbody></table></div></section>`
     : '';
-  const phase = state.completeness?.configured ? ` · étape ${e(phaseLabel(state.completeness.phase))}` : '';
+  const expected = rows.filter(r => r.required !== false).length;
+  const phase = rows.length ? ` · ${expected} pièce${expected > 1 ? 's' : ''} obligatoire${expected > 1 ? 's' : ''}${rows.length > expected ? `, ${rows.length - expected} facultative${rows.length - expected > 1 ? 's' : ''}` : ''}` : '';
   return `<div class="detail-layout dj-docs" data-folder-panel="${folder.slug}">
       <div class="dj-docs-head"><div><h2><span class="dj-dot is-${folder.slug}" aria-hidden="true"></span>${e(meta.name)}</h2>
         <p>Checklist documentaire${phase}</p></div>
@@ -448,6 +510,7 @@ function djBind() {
     dossierUpload({folder: rule.folder, type: rule.document_type, title: rule.title, ruleId: rule.id}).catch(showErr);
   }));
   app.querySelectorAll('[data-history]').forEach(button => button.addEventListener('click', () => openVersions(button.dataset.history)));
+  app.querySelectorAll('[data-dj-duplicate]').forEach(button => button.addEventListener('click', () => djDuplicateModal(button.dataset.djDuplicate)));
   app.querySelector('#ops-add-note')?.addEventListener('click', () => operationsAddNote(d.id));
   app.querySelector('#dj-open-request')?.addEventListener('click', () => operationsClientRequest(state.operationsDetail.client_request.id).catch(showErr));
   opsBindDrop(app.querySelector('#ops-folder-drop'), file => dossierUpload({folder: state.folder, file}).catch(showErr));
@@ -457,7 +520,9 @@ function djBind() {
   djAnnotateExcelFindings();
   djConsolidateNotes();
   if (state.dj.highlight) {
-    const row = app.querySelector(`.dj-row[data-rule="${CSS.escape(state.dj.highlight)}"]`);
+    const target = state.dj.highlight;
+    const row = target.startsWith('doc:') ? app.querySelector(`.dj-row[data-doc="${CSS.escape(target.slice(4))}"]`)
+      : app.querySelector(`.dj-row[data-rule="${CSS.escape(target)}"]`);
     if (row) {
       row.classList.add('is-target');
       row.scrollIntoView({block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
@@ -512,16 +577,52 @@ focusWorkspaceArea = function(area) {
   node?.scrollIntoView?.({block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
 };
 
+// --------------------------------------------------------------------------- doublons
+function djDuplicateModal(digest) {
+  const group = (state.djDuplicates || []).find(g => g.sha256 === digest);
+  if (!group) return;
+  const canReview = [...new Set(group.documents.map(d => d.folder))].every(folder => can('document.review', folder));
+  modal('Doublon détecté', `<p class="modal-desc">Ces ${group.documents.length} pièces ont exactement le même contenu (empreinte SHA-256 identique). La complétude n’est pas modifiée : la pièce reste comptée présente.</p>
+    <ul class="dj-dup-list">${group.documents.map(d => `<li>
+      <span class="dj-dup-folder"><span class="dj-dot is-${e(d.folder)}" aria-hidden="true"></span>${e(DJ_FOLDERS[d.folder]?.name || d.folder)}</span>
+      <span class="dj-dup-main"><strong>${e(d.title)}</strong><small>${e(d.doc_type)} · V${d.version} · ${e(d.original_name)} · ${niceDate(d.created_at)}</small></span>
+      <button class="secondary tiny" type="button" data-dup-open="${e(d.document_id)}">Ouvrir</button></li>`).join('')}</ul>
+    <div class="dj-dup-options">
+      <p><strong>Pièce déposée par erreur ?</strong> Ouvrez-la et déposez la bonne version : elle quitte alors le doublon.</p>
+      ${canReview ? `<form id="dj-dup-form" class="dj-dup-form" novalidate>
+        <p><strong>Les deux pièces doivent rester ?</strong> Indiquez pourquoi ; la décision est conservée dans l’historique.</p>
+        <div class="field"><label for="dj-dup-reason">Motif</label><textarea id="dj-dup-reason" rows="2" minlength="8" maxlength="1000" required placeholder="Ex. même email transmis par deux interlocuteurs"></textarea></div>
+        <div class="modal-actions"><button class="secondary" type="button" id="cancel-modal">Fermer</button><button class="primary" type="submit">${icon('check')} Conserver et marquer comme examiné</button></div>
+      </form>` : '<p class="dj-muted">Votre rôle ne permet pas de statuer sur ce doublon.</p>'}
+    </div>`);
+  overlay.querySelector('#cancel-modal')?.addEventListener('click', closeModal);
+  overlay.querySelectorAll('[data-dup-open]').forEach(button => button.addEventListener('click', () => openVersions(button.dataset.dupOpen)));
+  overlay.querySelector('#dj-dup-form')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const reason = overlay.querySelector('#dj-dup-reason').value.trim();
+    if (reason.length < 8) { toast('Indiquez un motif d’au moins 8 caractères.'); overlay.querySelector('#dj-dup-reason').focus(); return; }
+    const submit = event.submitter || event.target.querySelector('[type=submit]');
+    submit.disabled = true;
+    try {
+      await api(`/api/launches/${encodeURIComponent(state.detail.id)}/duplicates/review`, {method: 'POST', body: JSON.stringify({sha256: digest, reason})});
+      closeModal();
+      toast('Doublon examiné : les pièces sont conservées.');
+      await openLaunch(state.detail.id, state.folder);
+    } catch (error) { submit.disabled = false; showErr(error); }
+  });
+}
+
 opsTargetData = function(item) {
   // Lignes de complétude (tableau de bord) ou actions « pièce manquante / validation » : aller à la ligne.
   const rule = item.rule_id || (/^(missing|validation):/.test(item.id || '') ? item.id.split(':')[1] : (item.due !== undefined ? item.id : undefined));
-  return e(JSON.stringify({launch_id: item.launch_id, folder: item.folder, document_id: item.document_id, version_id: item.version_id, area: item.area, rule_id: rule}));
+  return e(JSON.stringify({launch_id: item.launch_id, folder: item.folder, document_id: item.document_id, version_id: item.version_id, area: item.area, rule_id: rule,
+    row_document: item.row_document}));
 };
 
 const djOriginalOpenTarget = opsOpenTarget;
 opsOpenTarget = async function(target) {
-  if (target.rule_id) {
-    await openLaunch(target.launch_id, target.folder || 'jaune', {rule_id: target.rule_id, folder: target.folder});
+  if (target.rule_id || target.row_document) {
+    await openLaunch(target.launch_id, target.folder || 'jaune', {rule_id: target.rule_id, row_document: target.row_document, folder: target.folder});
     return;
   }
   return djOriginalOpenTarget(target);

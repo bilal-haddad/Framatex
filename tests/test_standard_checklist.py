@@ -65,24 +65,28 @@ def test_standard_profile_checklist_states_and_dashboard(api):
     report, by = rows(api, lid)
     assert report['profile_name'] == STANDARD_PROFILE_NAME and report['phase'] == 'preparation'
     assert report['configured'] and len(report['rows']) == len(STANDARD_RULES)
-    # C. Calcul du besoin absent à la Préparation → Manquant.
-    assert by[('jaune', 'Calcul du besoin')]['status'] == 'missing'
-    # D. Test tissu exigible en Fabrication seulement → Non exigible, jamais compté manquant.
-    assert by[('jaune', 'Test tissu')]['status'] == 'not_due'
-    assert ('jaune', 'Test tissu') not in missing_on_dashboard(api, lid)
-    # Pièce facultative absente : Non exigible, à toutes les étapes.
-    assert by[('jaune', 'Emails techniques')]['status'] == 'not_due' and by[('jaune', 'Emails techniques')]['required'] is False
+    # Toute la checklist est visible et exigible dès la création : aucune pièce obligatoire
+    # n'attend une étape. Les seules pièces non exigées sont les facultatives.
+    required = [r for r in report['rows'] if r['required']]
+    assert len(required) == 19 and all(r['due'] and r['status'] == 'missing' for r in required)
+    assert {r['title'] for r in report['rows'] if r['status'] == 'not_due'} == {
+        'Emails techniques', 'Emails réception / logistique', 'Avoir / correction de facture'}
+    # C. Calcul du besoin absent → Manquant ; D. Test tissu absent → Manquant dès la création.
+    dashboard = missing_on_dashboard(api, lid)
+    assert ('jaune', 'Calcul du besoin') in dashboard and ('jaune', 'Test tissu') in dashboard
+    assert ('rose', 'Bon de livraison') in dashboard and ('vert', 'Facture FRAMATEX') in dashboard
+    assert ('jaune', 'Emails techniques') not in dashboard
 
+    # L'étape de la commande reste un suivi : elle ne change pas la checklist standard.
     profile_id = report['profile_id']
     assert api.patch(f'/api/launches/{lid}/completeness/context', headers=H,
                      json={'profile_id': profile_id, 'phase': 'approvisionnement'}).status_code == 200
+    assert missing_on_dashboard(api, lid) == dashboard
     # A. Réception : Bon de livraison absent → Manquant → visible au tableau de bord, avec client et règle.
     _, by = rows(api, lid)
-    assert by[('rose', 'Bon de livraison')]['status'] == 'missing'
     entry = next(m for m in api.get('/api/workspace/dashboard').json()['missing_documents']
                  if m['launch_id'] == lid and m['title'] == 'Bon de livraison')
     assert entry['folder'] == 'rose' and entry['client_name'] == 'Atelier Checklist' and entry['id'] == by[('rose', 'Bon de livraison')]['id']
-    assert ('rose', 'Emails réception / logistique') not in missing_on_dashboard(api, lid)
 
     # B. Dépôt du Bon de livraison → Présent → disparaît des manquants.
     delivery = deposit(api, lid, 'rose', 'Bon de livraison', b'BL V1')
@@ -90,13 +94,15 @@ def test_standard_profile_checklist_states_and_dashboard(api):
     assert by[('rose', 'Bon de livraison')]['status'] == 'present'
     assert ('rose', 'Bon de livraison') not in missing_on_dashboard(api, lid)
 
-    # E. Fiche de prix déposée → En validation : +1 validation, jamais comptée manquante.
+    # E. Fiche de prix déposée → En validation : listée « en validation », jamais manquante.
     pending_before = api.get('/api/workspace/dashboard').json()['kpis']['pending_documents']
     deposit(api, lid, 'jaune', 'Fiche de prix')
     _, by = rows(api, lid)
     assert by[('jaune', 'Fiche de prix')]['status'] == 'pending_validation'
     assert ('jaune', 'Fiche de prix') not in missing_on_dashboard(api, lid)
-    assert api.get('/api/workspace/dashboard').json()['kpis']['pending_documents'] == pending_before + 1
+    board = api.get('/api/workspace/dashboard').json()
+    assert board['kpis']['pending_documents'] == pending_before + 1
+    assert any(p['launch_id'] == lid and p['title'] == 'Fiche de prix' and p['document_id'] for p in board['pending_validation_documents'])
 
     # F. V2 du Bon de livraison → même ligne, version courante mise à jour, aucun second document.
     v2 = api.post(f"/api/documents/{delivery['id']}/versions", headers=H, files={'file': ('bl-v2.txt', b'BL V2', 'text/plain')})
@@ -118,6 +124,69 @@ def test_standard_profile_checklist_states_and_dashboard(api):
     deposit(api, lid, 'rose', 'Email')
     _, by = rows(api, lid)
     assert by[('rose', 'Emails réception / logistique')]['status'] == 'present'
+    # Réception matière : contrôlée avant d'être présente.
+    deposit(api, lid, 'rose', 'Document réception')
+    _, by = rows(api, lid)
+    assert by[('rose', 'Document de réception matière')]['status'] == 'pending_validation'
+
+
+def test_duplicates_are_detected_reviewed_and_raised_again(api):
+    lid = new_dossier(api, 'Chemise doublons')
+    blob = b'Email logistique identique ' + uuid.uuid4().bytes
+    first = deposit(api, lid, 'rose', 'Email', blob)
+    assert api.get(f'/api/launches/{lid}/duplicates').json() == []
+    second = deposit(api, lid, 'rose', 'Email', blob)
+    assert second['duplicates'] and second['duplicates'][0]['document_id'] == first['id']   # alerte au dépôt
+    groups = api.get(f'/api/launches/{lid}/duplicates').json()
+    assert len(groups) == 1 and not groups[0]['reviewed']
+    assert {d['document_id'] for d in groups[0]['documents']} == {first['id'], second['id']}
+    board = api.get('/api/workspace/dashboard').json()
+    entries = [d for d in board['duplicate_documents'] if d['launch_id'] == lid]
+    assert len(entries) == 1 and entries[0]['folder'] == 'rose' and len(entries[0]['documents']) == 2
+    assert board['kpis']['duplicate_documents'] == len(board['duplicate_documents'])
+    # Un doublon n'altère pas la complétude : la pièce reste présente.
+    _, by = rows(api, lid)
+    assert by[('rose', 'Emails réception / logistique')]['status'] == 'present'
+
+    digest = groups[0]['sha256']
+    assert api.post(f'/api/launches/{lid}/duplicates/review', headers=H, json={'sha256': digest, 'reason': 'court'}).status_code == 422
+    assert api.post(f'/api/launches/{lid}/duplicates/review', headers=H,
+                    json={'sha256': '0' * 64, 'reason': 'Aucun groupe pour cette empreinte'}).status_code == 404
+    reviewed = api.post(f'/api/launches/{lid}/duplicates/review', headers=H,
+                        json={'sha256': digest, 'reason': 'Même email transmis par deux interlocuteurs'})
+    assert reviewed.status_code == 201 and reviewed.json()[0]['reviewed'] and reviewed.json()[0]['review']['reason']
+    assert not any(d['launch_id'] == lid for d in api.get('/api/workspace/dashboard').json()['duplicate_documents'])
+    # Une nouvelle copie identique relance l'alerte : la décision ne couvrait que les pièces examinées.
+    deposit(api, lid, 'jaune', 'Email', blob)
+    groups = api.get(f'/api/launches/{lid}/duplicates').json()
+    assert len(groups) == 1 and not groups[0]['reviewed'] and len(groups[0]['documents']) == 3
+    # Corriger une pièce par une nouvelle version la retire du groupe.
+    fixed = api.post(f"/api/documents/{second['id']}/versions", headers=H, files={'file': ('corrige.txt', b'Autre email', 'text/plain')})
+    assert fixed.status_code == 201
+    groups = api.get(f'/api/launches/{lid}/duplicates').json()
+    assert second['id'] not in {d['document_id'] for d in groups[0]['documents']}
+    events = api.get(f'/api/workspace/activity?launch_id={lid}&limit=50').json()['items']
+    assert any(e['action'] == 'document.duplicate.review' for e in events)
+
+
+def test_duplicates_never_reveal_unreadable_subfolders(api):
+    from app.models import RolePermission
+    lid = new_dossier(api, 'Doublon confidentiel')
+    blob = b'Piece identique ' + uuid.uuid4().bytes
+    deposit(api, lid, 'jaune', 'Commande client', blob)
+    deposit(api, lid, 'vert', 'Facture', blob)
+    assert len(api.get(f'/api/launches/{lid}/duplicates').json()) == 1
+    email = f'jaune-{uuid.uuid4().hex}@test.local'
+    with SessionLocal() as db:
+        role = Role(name='Technique seule ' + uuid.uuid4().hex[:6])
+        role.grants.extend([RolePermission(action='launch.read', folder_slug=None),
+                            RolePermission(action='document.read', folder_slug='jaune')])
+        db.add(User(name='Technicienne', email=email, password_hash=hash_password(PASSWORD), roles=[role]))
+        db.commit()
+    with TestClient(app) as other:
+        assert other.post('/api/auth/login', headers=H, json={'email': email, 'password': PASSWORD}).status_code == 200
+        assert other.get(f'/api/launches/{lid}/duplicates').json() == []
+        assert not any(d['launch_id'] == lid for d in other.get('/api/workspace/dashboard').json()['duplicate_documents'])
 
 
 def test_apply_standard_profile_to_existing_dossier_once(api):
@@ -177,3 +246,31 @@ def test_tzdata_is_a_declared_dependency():
     requirements = (Path(__file__).resolve().parents[1] / 'requirements.txt').read_text()
     assert any(line.strip().startswith('tzdata') for line in requirements.splitlines())
     assert ZoneInfo('Africa/Casablanca').key == 'Africa/Casablanca'
+
+
+def test_migration_0009_makes_standard_checklist_due_now_only(tmp_path, monkeypatch):
+    migration = importlib.import_module('app.migrate')
+    engine = create_engine('sqlite:///' + str(tmp_path / 'before-0009.db'))
+    Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(text('DROP TABLE document_duplicate_reviews'))
+        for revision in migration.REVISIONS[:migration.REVISIONS.index('0009_visible_checklist_duplicates')]:
+            conn.execute(text('INSERT INTO schema_migrations VALUES (:v,:d)'), {'v': revision, 'd': '2026-10-21'})
+        conn.execute(text("INSERT INTO users (id,email,name,password_hash,active,created_at) VALUES ('u','u@example.test','U','h',1,'2026-01-01')"))
+        for pid, name in (('std', STANDARD_PROFILE_NAME), ('other', 'Profil par étapes')):
+            conn.execute(text("INSERT INTO completeness_profiles (id,name,description,created_by,created_at) VALUES (:i,:n,'','u','2026-01-01')"), {'i': pid, 'n': name})
+        rules = (('r1', 'std', 'Test tissu', 'fabrication', 1), ('r2', 'std', 'Avoir', 'cloture', 0), ('r3', 'other', 'Test tissu', 'fabrication', 1),
+                 ('r4', 'std', 'Document de réception matière', 'approvisionnement', 1))
+        for rid, pid, title, phase, required in rules:
+            conn.execute(text("INSERT INTO completeness_rules (id,profile_id,title,folder_slug,document_type,due_phase,requires_validation,active,guidance,required) "
+                              "VALUES (:i,:p,:t,'jaune',:t,:ph,0,1,'',:r)"), {'i': rid, 'p': pid, 't': title, 'ph': phase, 'r': required})
+    monkeypatch.setattr(migration, 'engine', engine)
+    migration.migrate(); migration.migrate()
+    assert 'document_duplicate_reviews' in inspect(engine).get_table_names()
+    with engine.connect() as conn:
+        phases = dict(conn.execute(text('SELECT id, due_phase FROM completeness_rules')).all())
+    assert phases == {'r1': 'preparation', 'r2': 'cloture', 'r3': 'fabrication', 'r4': 'preparation'}
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT requires_validation FROM completeness_rules WHERE id='r4'")).scalar() == 1
+        assert conn.execute(text("SELECT requires_validation FROM completeness_rules WHERE id='r1'")).scalar() == 0
+    engine.dispose()

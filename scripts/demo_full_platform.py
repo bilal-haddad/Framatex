@@ -121,7 +121,7 @@ def full_journey(qa, browser, base, admin_password, captures):
         def activate():
             internal_login(admin, 'recette@framatex.test', admin_password)
             headings = adm.locator('main h2').all_inner_texts()
-            order = ['Actions prioritaires', 'Documents manquants', 'Complétude des dossiers', 'Alertes importantes', 'Activité récente']
+            order = ['Actions prioritaires', 'Documents à traiter', 'Complétude des dossiers', 'Alertes importantes', 'Activité récente']
             assert [h for h in headings if h in order] == order, headings
             admin.check_page('parcours-dashboard')
             nav(adm, 'clients')
@@ -188,11 +188,20 @@ def full_journey(qa, browser, base, admin_password, captures):
             row = lambda title: adm.locator('.dj-row', has_text=title).first
             def state_of(title):
                 return row(title).locator('.dj-state').inner_text().strip()
-            # C. Calcul du besoin absent en Préparation → Manquant ; D. Test tissu → Non exigible.
+            # Toute la checklist est visible dès la création : 22 lignes sur les 4 sous-dossiers,
+            # chaque pièce obligatoire absente est « Manquant », quelle que soit l'étape.
+            total = 0
+            for slug in ('jaune', 'rose', 'bleu', 'vert'):
+                adm.click(f'.dj-folder[data-folder="{slug}"]')
+                adm.wait_for_selector(f'.dj-folder.selected[data-folder="{slug}"]')
+                total += adm.locator('.dj-checklist:not(.dj-other-table) .dj-row').count()
+            assert total == 22, total
+            assert not adm.locator('text=Exigible dès').count()
+            adm.click('.dj-folder[data-folder="jaune"]')
+            # C. Calcul du besoin absent → Manquant ; D. Test tissu absent → Manquant dès la création.
             assert state_of('Calcul du besoin') == 'Manquant'
-            assert state_of('Test tissu') == 'Non exigible'
-            assert 'Exigible dès l’étape Fabrication' in row('Test tissu').inner_text()
-            # Passage à l'étape Approvisionnement par l'interface.
+            assert state_of('Test tissu') == 'Manquant'
+            # L'étape de la commande reste un suivi modifiable dans l'interface.
             adm.click('#dj-edit-phase')
             adm.select_option('#c-phase', 'approvisionnement')
             adm.locator('#context-form button[type=submit]').click()
@@ -236,11 +245,44 @@ def full_journey(qa, browser, base, admin_password, captures):
             row('Fiche de prix').locator('[data-complete-validate]').click()
             adm.locator('#approve-form button[type=submit]').click()
             adm.wait_for_selector('.dj-row:has-text("Fiche de prix") .dj-state:has-text("Présent")')
-            # Facultatif et exception : jamais « Manquant ».
-            assert state_of('Emails techniques') == 'Non exigible' and 'Facultatif' in row('Emails techniques').inner_text()
+            # Facultatif : jamais « Manquant ».
+            assert state_of('Emails techniques') == 'Non applicable' and 'Facultatif' in row('Emails techniques').inner_text()
             admin.check_page('parcours-checklist-technique')
             assert ref
-        qa.run('Navigateur', 'Checklist Dossier Jaune : cas C/D, étape, lien tableau de bord → ligne Bon de livraison, dépôt V1 puis V2, validation Fiche de prix', checklist_cases)
+        qa.run('Navigateur', 'Checklist Dossier Jaune : 22 pièces visibles dès la création, lien tableau de bord → ligne Bon de livraison, dépôt V1 puis V2, validation Fiche de prix', checklist_cases)
+
+        def duplicate_journey():
+            # Un même email déposé deux fois → « Doublon détecté » dans le dossier et au tableau de bord,
+            # puis décision motivée → la ligne redevient « Présent » (la complétude n'est jamais faussée).
+            launch_id = adm.evaluate('state.detail.id')
+            row = lambda title: adm.locator('.dj-row', has_text=title).first
+            adm.click('.dj-folder[data-folder="rose"]')
+            blob = b'Email logistique identique ' + secrets.token_bytes(8)
+            for name in ('arrivee-lot.txt', 'arrivee-lot-copie.txt'):
+                adm.click('#upload-doc')
+                adm.select_option('#ops-folder', 'rose')
+                adm.fill('#ops-type', 'Email')
+                if adm.locator('#dj-separate').count():
+                    adm.check('#dj-separate')
+                adm.locator('#ops-file').set_input_files({'name': name, 'mimeType': 'text/plain', 'buffer': blob})
+                adm.locator('#ops-upload-form button[type=submit]').click()
+                adm.wait_for_selector('#ops-upload-form', state='detached')
+            adm.wait_for_selector('.dj-row:has-text("Emails réception / logistique") .dj-state:has-text("Doublon détecté")')
+            assert adm.locator('.dj-folder[data-folder="rose"] .is-duplicate').count()
+            nav(adm, 'home')
+            adm.click('[data-dash-state="duplicate"]')
+            line = adm.locator('#ops-missing tr', has_text='Doublon détecté').filter(has=adm.locator(f'[data-ops-target*="{launch_id}"]'))
+            line.first.locator('[data-ops-target]').click()
+            adm.wait_for_selector('.dj-folder.selected[data-folder="rose"]')
+            adm.wait_for_selector('.dj-row[data-state="duplicate"] button:focus')
+            admin.check_page('parcours-doublon-detecte')
+            adm.locator('.dj-row[data-state="duplicate"] [data-dj-duplicate]').first.click()
+            adm.fill('#dj-dup-reason', 'Même email transmis par deux interlocuteurs')
+            adm.locator('#dj-dup-form button[type=submit]').click()
+            adm.wait_for_selector('.dj-row:has-text("Emails réception / logistique") .dj-state:has-text("Présent")')
+            board = admin.context.request.get(base + '/api/workspace/dashboard').json()
+            assert not any(d['launch_id'] == launch_id for d in board['duplicate_documents'])
+        qa.run('Navigateur', 'Doublon : même email déposé deux fois → « Doublon détecté » (dossier, tableau de bord) → décision motivée → Présent', duplicate_journey)
 
         def reject_other():
             nav(adm, 'clients')

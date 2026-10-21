@@ -39,12 +39,27 @@ assert(row('Dossier technique client').includes('Présent') && row('Dossier tech
 const pending = row('Fiche de prix');
 assert(pending.includes('En validation') && pending.includes('data-complete-validate') && pending.includes('Examiner'));
 assert(pending.includes('&lt;img src=x&gt;') && !pending.includes('<img src=x>'));
-assert(row('Test tissu').includes('Non exigible') && row('Test tissu').includes('Exigible dès l’étape Fabrication'));
-assert(row('Emails techniques').includes('Facultatif') && !row('Emails techniques').includes('Manquant'));
+// Plus aucune lecture « par étape » : une pièce non exigée est « Non applicable », sans mention d'étape.
+assert(row('Test tissu').includes('Non applicable') && !row('Test tissu').includes('étape'));
+assert(row('Emails techniques').includes('Facultatif · à déposer si besoin') && !row('Emails techniques').includes('Manquant'));
 const exception = run(`djRow(RULES.find(r => r.folder === 'bleu'), new Map(), {can_write: true})`);
 assert(exception.includes('Exception') && exception.includes('&lt;b&gt;') && !exception.includes('Manquant'));
 // Lecture seule : pas de bouton de dépôt.
 assert(!run(`djRow(RULES.find(r => r.title === 'Calcul du besoin'), new Map(), {can_write: false})`).includes('data-dj-upload'));
+
+// 3 bis. Doublon : prioritaire à l'affichage, la pièce reste présente pour la complétude.
+ctx.GROUP = {sha256: 'a'.repeat(64), reviewed: false, documents: [
+  {document_id: 'doc-1', title: 'Dossier technique client', folder: 'jaune', doc_type: 'Dossier technique client', version: 2, original_name: 'dt.pdf', created_at: '2026-10-21T10:00:00'},
+  {document_id: 'doc-9', title: 'Copie <b>DT</b>', folder: 'rose', doc_type: 'Autre', version: 1, original_name: 'dt.pdf', created_at: '2026-10-21T11:00:00'}]};
+run(`state.djDuplicates = [GROUP]; state.folder = 'jaune'`);
+const dup = row('Dossier technique client');
+assert(dup.includes('Doublon détecté') && dup.includes('data-dj-duplicate="' + 'a'.repeat(64) + '"') && dup.includes('data-state="duplicate"'));
+assert(dup.includes('Contenu identique à « Copie &lt;b&gt;DT&lt;/b&gt; » (Réception)') && !dup.includes('<b>DT'));
+assert.equal(run(`djFolderStats('rose').duplicates`), 1);
+assert.equal(run(`djFolderStats('jaune').present`), 1);
+run(`state.djDuplicates = [{...GROUP, reviewed: true}]`);
+assert(row('Dossier technique client').includes('Présent') && !row('Dossier technique client').includes('Doublon'));
+run(`state.djDuplicates = []`);
 
 // 4. Navigation précise : un manquant du tableau de bord cible la règle, donc la ligne.
 const target = JSON.parse(run(`opsTargetData({launch_id: 'L1', folder: 'rose', id: 'rule-bl', due: true})`).replace(/&quot;/g, '"'));
@@ -59,7 +74,7 @@ for (const area of ['documents', 'completeness', 'workflow', 'quality', 'intake'
 // 5. Tableau de bord : colonnes demandées, 8 lignes puis « afficher les autres », filtre par sous-dossier.
 ctx.REPORT = {missing_documents: Array.from({length: 10}, (_, i) => ({id: `r${i}`, launch_id: 'L1', title: i ? `Pièce ${i}` : 'Bon <script>', folder: i % 2 ? 'rose' : 'jaune',
   due_phase: 'approvisionnement', due: true, status: 'missing', order_ref: 'CMD-1', launch_name: 'Veste', article: 'Veste lin', client_name: 'Client & Co'}))};
-run(`state.dashFilter = 'all'; state.dashShowAll = false`);
+run(`state.dashState = 'missing'; state.dashFilter = 'all'; state.dashShowAll = false`);
 let table = run(`dashMissingTable(REPORT)`);
 assert.equal((table.match(/data-ops-target=/g) || []).length, 8);
 assert(table.includes('Afficher les 2 autres pièces'));
@@ -71,7 +86,20 @@ table = run(`dashMissingTable(REPORT)`);
 assert.equal((table.match(/data-ops-target=/g) || []).length, 5);
 assert(!table.includes('Afficher les'));
 run(`state.dashFilter = 'vert'`);
-assert(run(`dashMissingTable(REPORT)`).includes('Aucune pièce manquante dans ce sous-dossier'));
+assert(run(`dashMissingTable(REPORT)`).includes('Rien à traiter dans ce sous-dossier'));
+// Doublons et validations : même tableau, état explicite, cible = ligne du dossier.
+ctx.REPORT.duplicate_documents = [{launch_id: 'L1', folder: 'rose', title: 'Email logistique', document_id: 'doc-9', sha256: 'b'.repeat(64), status: 'duplicate',
+  order_ref: 'DR-1', client_name: 'Client', documents: [{document_id: 'doc-8', title: 'Email logistique', folder: 'rose'}, {document_id: 'doc-9', title: 'Email logistique', folder: 'rose'}]}];
+ctx.REPORT.pending_validation_documents = [{id: 'rule-fp', launch_id: 'L1', folder: 'jaune', title: 'Fiche de prix', due: true, status: 'pending_validation', documents: [{id: 'doc-3', version: 1}], order_ref: 'DR-1'}];
+run(`state.dashState = 'duplicate'; state.dashFilter = 'all'`);
+table = run(`dashMissingTable(REPORT)`);
+assert(table.includes('Doublon détecté') && table.includes('2 pièces identiques') && table.includes('&quot;row_document&quot;:&quot;doc-9&quot;') && table.includes('Examiner'));
+run(`state.dashState = 'pending'`);
+table = run(`dashMissingTable(REPORT)`);
+assert(table.includes('En validation') && table.includes('&quot;rule_id&quot;:&quot;rule-fp&quot;'));
+const panel = run(`state.dashState = 'missing'; dashMissingPanel(REPORT)`);
+assert(panel.includes('data-dash-state="missing"') && panel.includes('data-dash-state="pending"') && panel.includes('data-dash-state="duplicate"'));
+assert(run(`DASH_KPIS.todo.map(k => k[0]).includes('duplicate_documents')`));
 
 // 6. Plus aucun libellé « Version 0.x » dans l'interface.
 for (const file of fs.readdirSync('static').filter(f => f.endsWith('.js')))

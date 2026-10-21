@@ -105,9 +105,9 @@ def run_browser(output, base_url, email, password, ids):
         page.locator('#password').fill(password)
         page.locator('#login-form button[type=submit]').click()
         expect(page.locator('.ops-heading h1')).to_have_text('Tableau de bord')
-        assert page.locator('.ops-kpi').count() == 8
+        assert page.locator('.ops-kpi').count() == 9
         expect(page.locator('#ops-missing')).to_contain_text('Calcul du besoin')
-        results['checks'].append('Connexion interne existante et 8 KPI réels')
+        results['checks'].append('Connexion interne existante et 9 KPI réels')
 
         def ready():
             page.wait_for_load_state('networkidle')

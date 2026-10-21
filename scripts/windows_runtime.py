@@ -441,7 +441,7 @@ def browser_smoke(base, email, password):
             page.fill('#email', email); page.fill('#password', password)
             page.click('#login-form button[type=submit]')
             expect(page.locator('.ops-heading h1')).to_have_text('Tableau de bord', timeout=15000)
-            expect(page.locator('.ops-kpi')).to_have_count(8)
+            expect(page.locator('.ops-kpi')).to_have_count(9)
             page.locator('.sidebar [data-view="launches"]').click()
             expect(page.locator('#ops-launch-results')).to_be_visible()
             assert not page.locator('.boot').count() and not errors, errors

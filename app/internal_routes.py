@@ -119,6 +119,43 @@ def launches(q: str = "", client: str = "", article: str = "", status: str = "",
     return [row for row in rows if matches(row)]
 
 
+class DuplicateReviewPayload(BaseModel):
+    sha256: str = Field(min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")
+    reason: str = Field(min_length=8, max_length=1000)
+
+
+@router.get("/api/launches/{launch_id}/duplicates")
+def launch_duplicates(launch_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    must, _, _, _ = guards()
+    must(user, "launch.read")
+    from .duplicates import duplicate_groups
+    return duplicate_groups(db, user, must_access(db, user, launch_id))
+
+
+@router.post("/api/launches/{launch_id}/duplicates/review", status_code=201)
+def review_duplicate(launch_id: str, payload: DuplicateReviewPayload,
+                     user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Conserver volontairement des pièces identiques : motif obligatoire, décision auditée."""
+    import json
+    from .completeness_models import DuplicateReview
+    from .duplicates import duplicate_groups
+    must, _, audit, _ = guards()
+    must(user, "launch.read")
+    launch = must_access(db, user, launch_id)
+    group = next((g for g in duplicate_groups(db, user, launch) if g["sha256"] == payload.sha256), None)
+    if not group:
+        raise HTTPException(404, "Aucun doublon pour cette empreinte dans ce dossier")
+    for folder in {d["folder"] for d in group["documents"]}:
+        must(user, "document.review", folder)
+    db.add(DuplicateReview(launch_id=launch.id, sha256=payload.sha256, reason=payload.reason.strip(),
+                           version_ids=json.dumps([d["version_id"] for d in group["documents"]]), decided_by=user.id))
+    audit(db, user, "document.duplicate.review", "launch", launch.id,
+          {"sha256": payload.sha256, "documents": [d["document_id"] for d in group["documents"]],
+           "reason": payload.reason.strip()})
+    db.commit()
+    return duplicate_groups(db, user, launch)
+
+
 @router.get("/api/workspace/dashboard")
 def dashboard(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     must, _, _, _ = guards()
@@ -133,6 +170,27 @@ def dashboard(user: User = Depends(get_current_user), db: Session = Depends(get_
                 "folder": f["slug"], **requirement}
                for row in active for f in row["folders"] for requirement in f.get("requirements", [])
                if requirement["status"] == "missing"]
+    # Pièces en validation et doublons non examinés : mêmes champs que les manquants.
+    pending_items = [{"launch_id": row["id"], "launch_name": row["name"], "order_ref": row["order_ref"],
+                      "client_name": row["client_name"], "article": row["article"], "folder": f["slug"],
+                      "document_id": requirement["documents"][0]["id"] if requirement["documents"] else None,
+                      **requirement}
+                     for row in active for f in row["folders"] for requirement in f.get("requirements", [])
+                     if requirement["status"] == "pending_validation"]
+    from .duplicates import duplicate_groups
+    duplicate_items = []
+    for launch, row in zip(launches, summaries):
+        if row["status"] == "Clôturé":
+            continue
+        for group in duplicate_groups(db, user, launch):
+            if group["reviewed"]:
+                continue
+            latest = group["documents"][-1]
+            duplicate_items.append({"launch_id": row["id"], "launch_name": row["name"], "order_ref": row["order_ref"],
+                                    "client_name": row["client_name"], "article": row["article"],
+                                    "folder": latest["folder"], "title": latest["title"],
+                                    "document_id": latest["document_id"], "sha256": group["sha256"],
+                                    "status": "duplicate", "documents": group["documents"]})
     priority_report = priorities(user, db)
     return {"kpis": {"active_launches": len(active),
                      "complete_launches": sum(r["completion"]["state"] == "complete" for r in active),
@@ -141,9 +199,11 @@ def dashboard(user: User = Depends(get_current_user), db: Session = Depends(get_
                      "alerts": sum(r["alerts"] for r in active),
                      "inconsistencies": sum(len(r["inconsistencies"]) for r in active),
                      "unacknowledged_changes": sum(r["unacknowledged_changes"] for r in active),
+                     "duplicate_documents": len(duplicate_items),
                      "unconfigured_launches": sum(r["completion"]["state"] == "unconfigured" for r in active),
                      "partial_launches": sum(r["completion"]["state"] == "partial" for r in active)},
             "launches": summaries, "missing_documents": missing, "priorities": priority_report,
+            "pending_validation_documents": pending_items, "duplicate_documents": duplicate_items,
             "activity": activity(db, user, limit=12)["items"]}
 
 

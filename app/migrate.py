@@ -29,7 +29,7 @@ MIGRATION_TABLE = Table('schema_migrations', Base.metadata,
 
 REVISIONS = ('0001_baseline', '0002_launch_scope', '0003_pilot_reports', '0004_client_space',
              '0005_internal_operations', '0006_client_workflow', '0007_client_order_launch',
-             '0008_optional_rules')
+             '0008_optional_rules', '0009_visible_checklist_duplicates')
 
 
 def _versions(conn):
@@ -69,7 +69,7 @@ def migrate():
                                 'client_order_documents', 'client_order_document_versions',
                                 'launch_operations', 'internal_document_comments', 'internal_experience_notes',
                                 'client_document_requests', 'client_document_request_events', 'client_shared_documents',
-                                'client_order_launches'}
+                                'client_order_launches', 'document_duplicate_reviews'}
                 missing = (set(Base.metadata.tables) - later_tables) - existing
                 if missing:
                     raise RuntimeError('Base antérieure incomplète : tables manquantes : ' + ', '.join(sorted(missing)))
@@ -125,6 +125,17 @@ def migrate():
                 conn.execute(text('ALTER TABLE completeness_rules ADD COLUMN required BOOLEAN NOT NULL DEFAULT 1'))
             conn.execute(text('INSERT INTO schema_migrations VALUES (:v, :d)'),
                          {'v':'0008_optional_rules','d':datetime.now(timezone.utc).isoformat()})
+        if '0009_visible_checklist_duplicates' not in done:
+            # Additif : décisions sur les doublons ; et checklist standard entièrement visible
+            # et exigible dès la création du Dossier Jaune (règles obligatoires du profil standard).
+            Base.metadata.tables['document_duplicate_reviews'].create(bind=conn, checkfirst=True)
+            conn.execute(text("UPDATE completeness_rules SET due_phase = 'preparation' WHERE required = 1 AND profile_id IN "
+                              "(SELECT id FROM completeness_profiles WHERE name = 'Dossier Jaune FRAMATEX standard')"))
+            # La réception matière est contrôlée avant d'être comptée présente.
+            conn.execute(text("UPDATE completeness_rules SET requires_validation = 1 WHERE title = 'Document de réception matière' AND profile_id IN "
+                              "(SELECT id FROM completeness_profiles WHERE name = 'Dossier Jaune FRAMATEX standard')"))
+            conn.execute(text('INSERT INTO schema_migrations VALUES (:v, :d)'),
+                         {'v':'0009_visible_checklist_duplicates','d':datetime.now(timezone.utc).isoformat()})
         # Defensive consistency check: pre-0.15 historical tables stay untouched.
         cols = {c['name'] for c in inspect(conn).get_columns('launches')}
         if 'restricted' not in cols or 'launch_members' not in inspect(conn).get_table_names():

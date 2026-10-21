@@ -6,8 +6,8 @@
 const DASH_FOLDERS = ['jaune', 'rose', 'bleu', 'vert'];
 const DASH_KPIS = {
   dossiers: [['active_launches', 'Dossiers actifs'], ['complete_launches', 'Dossiers complets'], ['incomplete_launches', 'Dossiers incomplets']],
-  todo: [['missing_documents', 'Documents manquants'], ['pending_documents', 'Documents à valider'], ['alerts', 'Alertes à traiter'],
-    ['inconsistencies', 'Incohérences détectées'], ['unacknowledged_changes', 'Modifications à examiner']],
+  todo: [['missing_documents', 'Documents manquants'], ['pending_documents', 'Documents à valider'], ['duplicate_documents', 'Doublons à examiner'],
+    ['alerts', 'Alertes à traiter'], ['inconsistencies', 'Incohérences détectées'], ['unacknowledged_changes', 'Modifications à examiner']],
 };
 const DASH_PAGE = 8;
 
@@ -17,45 +17,84 @@ function dashKpi([key, label], k, attention) {
   return `<button class="ops-kpi dash-kpi ${attention && k[key] ? 'attention' : ''}" data-ops-kpi="${key}"><strong>${e(k[key] ?? 0)}</strong><span>${e(label)}</span></button>`;
 }
 
+// Trois listes, un seul tableau : pièces manquantes, en validation, doublons non examinés.
+const DASH_STATES = [
+  ['missing', 'Manquants', 'missing_documents', 'missing'],
+  ['pending', 'En validation', 'pending_validation_documents', 'pending_validation'],
+  ['duplicate', 'Doublons', 'duplicate_documents', 'duplicate'],
+];
+
+function dashList(report, key = state.dashState || 'missing') {
+  const [, , field] = DASH_STATES.find(([k]) => k === key) || DASH_STATES[0];
+  return report[field] || [];
+}
+
 function dashMissingRows(report) {
   const filter = state.dashFilter || 'all';
-  const rows = report.missing_documents.filter(row => filter === 'all' || row.folder === filter);
+  const rows = dashList(report).filter(row => filter === 'all' || row.folder === filter);
   const shown = state.dashShowAll ? rows : rows.slice(0, DASH_PAGE);
   return {rows, shown};
 }
 
+function dashRowDetail(row, key) {
+  if (key === 'duplicate') {
+    const others = (row.documents || []).filter(d => d.document_id !== row.document_id);
+    return `${row.documents?.length || 2} pièces identiques${others[0] ? ` · avec « ${e(others[0].title)} »${others[0].folder !== row.folder ? ` (${e(DJ_FOLDERS[others[0].folder]?.name || others[0].folder)})` : ''}` : ''}`;
+  }
+  if (key === 'pending') return `Déposée · validation requise${row.documents?.[0] ? ` · V${row.documents[0].version}` : ''}`;
+  return row.required === false ? 'Pièce facultative' : 'Pièce obligatoire absente';
+}
+
 function dashMissingTable(report) {
+  const key = state.dashState || 'missing';
+  const [, label, , status] = DASH_STATES.find(([k]) => k === key) || DASH_STATES[0];
   const {rows, shown} = dashMissingRows(report);
-  if (!rows.length) return opsEmpty(report.missing_documents.length ? 'Aucune pièce manquante dans ce sous-dossier.' : 'Aucune pièce exigible manquante.');
+  if (!rows.length) {
+    const any = dashList(report).length;
+    const empty = {missing: 'Aucune pièce obligatoire manquante.', pending: 'Aucune pièce en attente de validation.', duplicate: 'Aucun doublon à examiner.'}[key];
+    return opsEmpty(any ? 'Rien à traiter dans ce sous-dossier.' : empty);
+  }
   const body = shown.map(row => {
     const meta = DJ_FOLDERS[row.folder] || {name: row.folder};
-    return `<tr class="dj-row is-missing dash-row" data-dash-row>
+    const target = key === 'duplicate' ? {...row, row_document: row.document_id, document_id: undefined} : row;
+    const tone = DJ_STATES[status][1];
+    return `<tr class="dj-row is-${tone} dash-row" data-dash-row data-state="${status}">
       <td data-label="Sous-dossier"><span class="dash-folder"><span class="dj-dot is-${e(row.folder)}" aria-hidden="true"></span>${e(meta.name)}</span></td>
-      <td data-label="Document"><strong>${e(row.title)}</strong><small>Exigible dès l’étape ${e(phaseLabel(row.due_phase))}</small></td>
+      <td data-label="Document"><strong>${e(row.title)}</strong><small>${dashRowDetail(row, key)}</small></td>
       <td data-label="Commande / dossier"><strong class="dash-ref">${e(row.order_ref || row.launch_name)}</strong><small>${e(row.article || row.launch_name)}</small></td>
       <td data-label="Client">${e(row.client_name || '—')}</td>
-      <td data-label="État">${djStatePill('missing')}</td>
-      <td class="dj-action" data-label="Action"><span class="dj-action-group"><button class="secondary tiny" data-ops-target="${opsTargetData(row)}" aria-label="Ouvrir ${e(row.title)} · ${e(row.order_ref || row.launch_name)}">Ouvrir ${icon('arrow')}</button></span></td></tr>`;
+      <td data-label="État">${djStatePill(status)}</td>
+      <td class="dj-action" data-label="Action"><span class="dj-action-group"><button class="secondary tiny" data-ops-target="${opsTargetData(target)}" aria-label="Ouvrir ${e(row.title)} · ${e(row.order_ref || row.launch_name)}">${key === 'duplicate' ? 'Examiner' : 'Ouvrir'} ${icon('arrow')}</button></span></td></tr>`;
   }).join('');
   const more = rows.length > shown.length
     ? `<button class="link dash-more" id="dash-more">Afficher les ${rows.length - shown.length} autres pièces</button>` : '';
-  return `<div class="dj-table-wrap"><table class="dj-checklist dash-table dash-missing-table"><caption class="sr-only">Documents manquants</caption>
+  return `<div class="dj-table-wrap"><table class="dj-checklist dash-table dash-missing-table"><caption class="sr-only">Documents à traiter · ${e(label)}</caption>
     <colgroup><col class="dash-c-folder"><col class="dash-c-doc"><col class="dash-c-ref"><col class="dash-c-client"><col class="dash-c-state"><col class="dash-c-act"></colgroup>
     <thead><tr><th scope="col">Sous-dossier</th><th scope="col">Document</th><th scope="col">Commande / dossier</th><th scope="col">Client</th><th scope="col">État</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
     <tbody>${body}</tbody></table></div>${more}`;
 }
 
-function dashMissingPanel(report) {
-  const missing = report.missing_documents;
+function dashFilters(report) {
+  const list = dashList(report);
   const filter = state.dashFilter || 'all';
-  const count = slug => missing.filter(row => row.folder === slug).length;
-  const chips = [['all', 'Tous', missing.length], ...DASH_FOLDERS.map(slug => [slug, DJ_FOLDERS[slug].name, count(slug)])]
-    .map(([key, label, n]) => `<button class="dj-chip" aria-pressed="${filter === key}" data-dash-filter="${key}"${key !== 'all' ? ` data-folder-dot="${key}"` : ''}>${key !== 'all' ? `<span class="dj-dot is-${key}" aria-hidden="true"></span>` : ''}${e(label)}<span class="dj-badge ${n ? 'is-missing' : ''}">${n}</span></button>`).join('');
+  const count = slug => list.filter(row => row.folder === slug).length;
+  const tone = (DASH_STATES.find(([k]) => k === (state.dashState || 'missing')) || DASH_STATES[0])[3];
+  return [['all', 'Tous', list.length], ...DASH_FOLDERS.map(slug => [slug, DJ_FOLDERS[slug].name, count(slug)])]
+    .map(([key, label, n]) => `<button class="dj-chip" aria-pressed="${filter === key}" data-dash-filter="${key}">${key !== 'all' ? `<span class="dj-dot is-${key}" aria-hidden="true"></span>` : ''}${e(label)}<span class="dj-badge ${n ? 'is-' + DJ_STATES[tone][1] : ''}">${n}</span></button>`).join('');
+}
+
+function dashMissingPanel(report) {
+  const key = state.dashState || 'missing';
+  const segments = DASH_STATES.map(([k, label, field, status]) => {
+    const n = (report[field] || []).length;
+    return `<button class="dash-state-tab is-${DJ_STATES[status][1]}" role="tab" aria-selected="${k === key}" data-dash-state="${k}">
+      <strong data-count-to="${n}">${n}</strong><span>${e(label)}</span></button>`;
+  }).join('');
   return `<section class="ops-panel dash-panel ops-missing" id="ops-missing" aria-labelledby="dash-missing-title">
-      <div class="dash-panel-head"><div><h2 id="dash-missing-title">Documents manquants</h2>
-        <p>Pièces exigibles à l’étape en cours et absentes du dossier. Cliquez pour ouvrir la ligne de checklist.</p></div>
-        <span class="dj-state is-missing">${missing.length} pièce${missing.length > 1 ? 's' : ''}</span></div>
-      ${missing.length ? `<div class="dj-subnav dash-filters" role="group" aria-label="Filtrer par sous-dossier">${chips}</div>` : ''}
+      <div class="dash-panel-head"><div><h2 id="dash-missing-title">Documents à traiter</h2>
+        <p>Toutes les pièces attendues des dossiers actifs, visibles dès la création du dossier. Cliquez pour ouvrir la ligne de checklist.</p></div></div>
+      <div class="dash-states" role="tablist" aria-label="État des documents">${segments}</div>
+      <div class="dj-subnav dash-filters" role="group" aria-label="Filtrer par sous-dossier" id="dash-filters">${dashFilters(report)}</div>
       <div id="dash-missing-body">${dashMissingTable(report)}</div>
     </section>`;
 }
@@ -113,6 +152,8 @@ async function dashboardHome() {
   const unconfigured = k.unconfigured_launches || k.partial_launches
     ? `<p class="dash-note">${k.unconfigured_launches ? `${k.unconfigured_launches} dossier(s) sans checklist` : ''}${k.unconfigured_launches && k.partial_launches ? ' · ' : ''}${k.partial_launches ? `${k.partial_launches} bilan(s) partiel(s) selon vos accès` : ''} : ils ne sont jamais comptés comme complets.</p>` : '';
   const priorities = report.priorities.items.slice(0, 6);
+  // Chaque arrivée sur le tableau de bord repart des pièces manquantes, tous sous-dossiers.
+  state.dashState = 'missing'; state.dashFilter = 'all'; state.dashShowAll = false;
   mount(`<div class="dj dj-dash">
     ${opsHeading('Tableau de bord', `${today.charAt(0).toUpperCase() + today.slice(1)} · ${k.active_launches} dossier${k.active_launches > 1 ? 's' : ''} actif${k.active_launches > 1 ? 's' : ''}`,
       can('launch.create') ? `<button class="primary" id="ops-create">${icon('plus')} Nouveau dossier</button>` : '')}
@@ -157,26 +198,63 @@ function dashBindRows(root) {
 function dashBind(report) {
   dashBindRows(app.querySelector('.dj-dash'));
   app.querySelector('#ops-create')?.addEventListener('click', openNewLaunch);
-  const refreshMissing = () => {
+  const refresh = (filters = false) => {
     const body = app.querySelector('#dash-missing-body');
     body.innerHTML = dashMissingTable(report);
     dashBindRows(body);
-    body.querySelector('#dash-more')?.addEventListener('click', () => { state.dashShowAll = true; refreshMissing(); });
+    body.querySelector('#dash-more')?.addEventListener('click', () => { state.dashShowAll = true; refresh(); });
+    if (filters) { app.querySelector('#dash-filters').innerHTML = dashFilters(report); bindFilters(); }
   };
-  app.querySelector('#dash-more')?.addEventListener('click', () => { state.dashShowAll = true; refreshMissing(); });
-  app.querySelectorAll('[data-dash-filter]').forEach(button => button.addEventListener('click', () => {
+  const bindFilters = () => app.querySelectorAll('[data-dash-filter]').forEach(button => button.addEventListener('click', () => {
     state.dashFilter = button.dataset.dashFilter; state.dashShowAll = false;
     app.querySelectorAll('[data-dash-filter]').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
-    refreshMissing();
+    refresh();
   }));
+  const selectState = (key, focus = false) => {
+    state.dashState = key; state.dashShowAll = false; state.dashFilter = 'all';
+    app.querySelectorAll('[data-dash-state]').forEach(b => {
+      const active = b.dataset.dashState === key;
+      b.setAttribute('aria-selected', String(active)); b.tabIndex = active ? 0 : -1;
+      if (active && focus) b.focus();
+    });
+    refresh(true);
+  };
+  app.querySelector('#dash-more')?.addEventListener('click', () => { state.dashShowAll = true; refresh(); });
+  bindFilters();
+  const tabs = [...app.querySelectorAll('[data-dash-state]')];
+  tabs.forEach((button, index) => {
+    button.tabIndex = button.getAttribute('aria-selected') === 'true' ? 0 : -1;
+    button.addEventListener('click', () => selectState(button.dataset.dashState));
+    button.addEventListener('keydown', event => {
+      const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+      if (!step) return;
+      event.preventDefault();
+      selectState(tabs[(index + step + tabs.length) % tabs.length].dataset.dashState, true);
+    });
+  });
+  const scroll = selector => app.querySelector(selector)?.scrollIntoView({block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+  const panels = {missing_documents: 'missing', pending_documents: 'pending', duplicate_documents: 'duplicate'};
   app.querySelectorAll('[data-ops-kpi]').forEach(button => button.onclick = () => {
     const key = button.dataset.opsKpi;
-    const scroll = selector => app.querySelector(selector)?.scrollIntoView({block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
-    if (key === 'missing_documents') scroll('#ops-missing');
+    if (panels[key]) { selectState(panels[key]); scroll('#ops-missing'); }
     else if (['alerts', 'inconsistencies', 'unacknowledged_changes'].includes(key)) scroll('#ops-concerns');
-    else if (key === 'pending_documents') navigate('actions');
     else { state.opsCompletionFilter = key === 'complete_launches' ? 'complete' : key === 'incomplete_launches' ? 'incomplete' : ''; navigate('launches'); }
   });
+  dashCountUp();
+}
+
+// Chiffres qui montent une seule fois par session (valeur réelle déjà affichée sans animation).
+function dashCountUp() {
+  if (state.dashCounted || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  state.dashCounted = true;
+  const items = [...app.querySelectorAll('.dash-kpi strong, .dash-state-tab strong')].map(el => [el, Number(el.textContent)]).filter(([, n]) => n > 0);
+  const start = performance.now();
+  const step = now => {
+    const t = Math.min((now - start) / 650, 1), eased = 1 - Math.pow(1 - t, 3);
+    for (const [el, n] of items) if (el.isConnected) el.textContent = String(Math.round(n * eased));
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 operationsHome = dashboardHome;

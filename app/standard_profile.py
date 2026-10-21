@@ -4,7 +4,10 @@ Le profil s'appuie entièrement sur le moteur de complétude existant (règles p
 sous-dossier, type documentaire, étape d'exigibilité, validation). Il est créé à
 la première utilisation, puis reste modifiable dans Administration ; une règle
 désactivée par un administrateur n'est jamais réactivée ici.
-Étapes : Préparation → Approvisionnement → Fabrication → Expédition → Clôture.
+Toutes les pièces obligatoires sont exigibles dès la création du dossier : la
+checklist complète est visible et lisible immédiatement (Présent, Manquant, En
+validation, Exception). Les pièces facultatives ne sont jamais manquantes.
+L'étape de la commande reste une information de suivi.
 """
 from __future__ import annotations
 
@@ -21,25 +24,25 @@ STANDARD_RULES = [
     ("jaune", "Dossier technique client", "Dossier technique client", "preparation", False, True),
     ("jaune", "Commande client", "Commande client", "preparation", False, True),
     ("jaune", "Lancement provisoire", "Lancement provisoire", "preparation", False, True),
-    ("jaune", "Lancement définitif", "Lancement définitif", "fabrication", False, True),
+    ("jaune", "Lancement définitif", "Lancement définitif", "preparation", False, True),
     ("jaune", "Fiche d’emploi", "Fiche d’emploi", "preparation", True, True),
     ("jaune", "Calcul du besoin", "Calcul du besoin", "preparation", False, True),
     ("jaune", "Fiche de prix", "Fiche de prix", "preparation", True, True),
-    ("jaune", "Étude BE / Excel", "Excel BE", "approvisionnement", False, True),
-    ("jaune", "Test tissu", "Tests tissu", "fabrication", False, True),
+    ("jaune", "Étude BE / Excel", "Excel BE", "preparation", False, True),
+    ("jaune", "Test tissu", "Tests tissu", "preparation", False, True),
     ("jaune", "Emails techniques", "Email", "preparation", False, False),
-    ("rose", "Bon de livraison", "Bon de livraison", "approvisionnement", False, True),
-    ("rose", "Bon / note de réception", "Bon de réception", "approvisionnement", False, True),
-    ("rose", "Document de réception matière", "Document réception", "approvisionnement", False, True),
-    ("rose", "Emails réception / logistique", "Email", "approvisionnement", False, False),
-    ("bleu", "Déclaration douanière", "Pièce douanière", "approvisionnement", False, True),
-    ("bleu", "Documents import / export", "Justificatif import/export", "expedition", False, True),
-    ("bleu", "Document transit", "Document transit", "expedition", False, True),
-    ("bleu", "Document transport", "Document transport", "expedition", False, True),
-    ("bleu", "Justificatif de dédouanement", "Justificatif de dédouanement", "expedition", False, True),
-    ("vert", "Facture FRAMATEX", "Facture", "expedition", False, True),
-    ("vert", "Pièce de facturation associée", "Document facturation", "cloture", False, True),
-    ("vert", "Avoir / correction de facture", "Avoir / correction de facture", "cloture", False, False),
+    ("rose", "Bon de livraison", "Bon de livraison", "preparation", False, True),
+    ("rose", "Bon / note de réception", "Bon de réception", "preparation", False, True),
+    ("rose", "Document de réception matière", "Document réception", "preparation", True, True),
+    ("rose", "Emails réception / logistique", "Email", "preparation", False, False),
+    ("bleu", "Déclaration douanière", "Pièce douanière", "preparation", False, True),
+    ("bleu", "Documents import / export", "Justificatif import/export", "preparation", False, True),
+    ("bleu", "Document transit", "Document transit", "preparation", False, True),
+    ("bleu", "Document transport", "Document transport", "preparation", False, True),
+    ("bleu", "Justificatif de dédouanement", "Justificatif de dédouanement", "preparation", False, True),
+    ("vert", "Facture FRAMATEX", "Facture", "preparation", False, True),
+    ("vert", "Pièce de facturation associée", "Document facturation", "preparation", False, True),
+    ("vert", "Avoir / correction de facture", "Avoir / correction de facture", "preparation", False, False),
 ]
 
 
