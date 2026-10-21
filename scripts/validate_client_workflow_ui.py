@@ -6,6 +6,7 @@ Réutilise le démarrage/arrêt isolé du runner de recette existant.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from contextlib import nullcontext
 import json
 from pathlib import Path
 import secrets
@@ -14,7 +15,7 @@ import subprocess
 import validate_internal_ui as harness
 
 
-def run_browser(output, base_url, email, password, ids):
+def run_browser(output, base_url, email, password, ids, browser=None):
     from playwright.sync_api import expect, sync_playwright
     report = {'status': 'running', 'tested_at': datetime.now(timezone.utc).isoformat(),
               'run_id': secrets.token_hex(8), 'checks': [], 'screenshots': [], 'errors': [],
@@ -22,9 +23,11 @@ def run_browser(output, base_url, email, password, ids):
               'source_dirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=harness.ROOT, text=True).strip())}
     (output / 'results.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
     headers = {'X-Framatex-Request': '1'}
-    with sync_playwright() as p:
-        browser = p.chromium.launch(executable_path=shutil.which('chromium') or shutil.which('google-chrome'),
-                                    headless=True, args=['--no-sandbox', '--disable-dev-shm-usage'])
+    owns_browser = browser is None
+    with (sync_playwright() if owns_browser else nullcontext()) as p:
+        if owns_browser:
+            browser = p.chromium.launch(executable_path=shutil.which('chromium') or shutil.which('google-chrome'),
+                                        headless=True, args=['--no-sandbox', '--disable-dev-shm-usage'])
         internal = browser.new_context(base_url=base_url, locale='fr-FR', timezone_id='Africa/Casablanca')
         client_a = browser.new_context(base_url=base_url, locale='fr-FR', timezone_id='Africa/Casablanca')
         client_b = browser.new_context(base_url=base_url, locale='fr-FR', timezone_id='Africa/Casablanca')
@@ -193,7 +196,10 @@ def run_browser(output, base_url, email, password, ids):
             assert internal.request.get(path).ok
         assert not report['errors'], report['errors']
         check('Message suspended distinct, pages intégrées conservées et aucune erreur JavaScript')
-        browser.close()
+        for context in (internal, client_a, client_b):
+            context.close()
+        if owns_browser:
+            browser.close()
     report['status'] = 'passed'
     (output / 'results.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
     print('Scénario complet validé.', flush=True)

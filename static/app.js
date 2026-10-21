@@ -31,12 +31,17 @@ function sizeText(n){return n>=1024*1024?`${(n/1024/1024).toFixed(1)} Mo`:`${Mat
 const app=document.querySelector('#app'), overlay=document.querySelector('#overlay-root');
 const state={me:null,view:'home',priorities:null,launches:[],dashboard:null,detail:null,completeness:null,completionProfiles:[],completenessPhases:[{code:'preparation',label:'Préparation'},{code:'approvisionnement',label:'Approvisionnement'},{code:'fabrication',label:'Fabrication'},{code:'expedition',label:'Expédition'},{code:'cloture',label:'Clôture'}],folder:'jaune',roles:[],users:[],audit:[],workflowReviews:[],workflowValues:[],workflowImpacts:[],workflowFields:[],workflowRules:[],qualityReport:null,excelInspections:[],specReport:null,mailReport:null,simGraph:null,simHistory:[],orliReconciliation:null,orliBatches:[],materials:null,approvalOverview:null,clientPublications:null,supplierRequests:null,approvalTemplates:[],approvalRoles:[],notifications:null,query:''};
 async function api(path,options={}){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),options.body instanceof FormData?60000:8000);
+  try{
   const headers={'X-Framatex-Request':'1',...options.headers};
   if(options.body && !(options.body instanceof FormData))headers['Content-Type']='application/json';
-  const res=await fetch(path,{...options,headers,credentials:'same-origin'});
+  const res=await fetch(path,{...options,headers,credentials:'same-origin',cache:'no-store',signal:controller.signal});
   if(!res.ok){let data;try{data=await res.json()}catch{};if(res.status===401 && !path.includes('/auth/login')){state.me=null;renderLogin()}
-    const error=typeof data?.detail==='string'?data.detail:`Erreur HTTP ${res.status}`;throw new Error(error)}
+    const error=typeof data?.detail==='string'?data.detail:`Erreur HTTP ${res.status}`;const err=new Error(error);err.status=res.status;throw err}
   if(res.headers.get('content-type')?.includes('application/json'))return await res.json();return res;
+  }catch(err){if(err.name==='AbortError'||err instanceof TypeError){const unavailable=new Error('Impossible de joindre le serveur FRAMATEX. Réessayez.');unavailable.unavailable=true;throw unavailable}throw err}
+  finally{clearTimeout(timer)}
 }
 let timeout;function toast(msg){const el=document.querySelector('#toast');el.textContent=msg;el.classList.add('visible');clearTimeout(timeout);timeout=setTimeout(()=>el.classList.remove('visible'),3400)}
 function showErr(err){toast(err.message||String(err))}
@@ -206,4 +211,13 @@ function createCompletenessRule(profileId){
  overlay.querySelector('#rule-form').onsubmit=async ev=>{ev.preventDefault();try{await api(`/api/admin/completeness/profiles/${profileId}/rules`,{method:'POST',body:JSON.stringify({title:val('r-title'),folder:val('r-folder'),document_type:val('r-doctype'),due_phase:val('r-phase'),requires_validation:val('r-review')==='yes',guidance:val('r-guidance')})});closeModal();toast('Règle ajoutée');await admin()}catch(err){showErr(err)}};
 }
 
-(async function init(){try{state.me=await api('/api/auth/me');if(!(await paperOpenDeepLink()))await navigate('home')}catch{renderLogin()}})();
+function renderServerUnavailable(){
+ overlay.innerHTML='';app.innerHTML='<div class="boot" role="alert"><p>Impossible de joindre le serveur FRAMATEX.</p><p>Vérifiez la fenêtre du lanceur et l’adresse de cet onglet.</p><button type="button" class="primary" id="boot-retry">Réessayer</button></div>';
+ app.querySelector('#boot-retry').onclick=()=>window.location.reload();
+}
+// All deferred extension scripts must be evaluated before initialization: a fast
+// /auth/me response must not race paper.js / internal.js on cached Windows loads.
+(async function init(){
+ await new Promise(resolve=>window.addEventListener('DOMContentLoaded',resolve,{once:true}));
+ try{state.me=await api('/api/auth/me');if(!(await paperOpenDeepLink()))await navigate('home')}catch(err){if(err.status===401)renderLogin();else renderServerUnavailable()}
+})();

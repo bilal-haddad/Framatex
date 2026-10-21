@@ -55,3 +55,48 @@ def test_windows_launcher_has_no_typographic_quotes():
     script = (Path(__file__).resolve().parents[1] / 'scripts' / 'start_windows.ps1').read_text(encoding='utf-8-sig')
     offenders = [n for n, line in enumerate(script.splitlines(), 1) if any(c in line for c in '‘’“”')]
     assert not offenders, f'Guillemets typographiques aux lignes {offenders}'
+
+
+def test_boot_assets_are_not_cached_and_csp_is_unchanged():
+    with TestClient(app) as client:
+        for path in ('/', '/espace-framatex', '/espace-client', '/assets/app.js', '/assets/boot-guard.js', '/assets/client/api.js'):
+            response = client.get(path)
+            assert response.status_code == 200
+            assert response.headers['cache-control'] == 'no-store'
+        response = client.get('/espace-framatex')
+        assert "script-src 'self';" in response.headers['content-security-policy']
+        assert 'boot-guard.js' in response.text
+
+
+def test_health_identity_only_in_managed_local_runtime(monkeypatch):
+    import os
+    with TestClient(app) as client:
+        monkeypatch.delenv('FRAMATEX_RUNTIME_ID', raising=False)
+        assert 'runtime_id' not in client.get('/api/health').json()
+        monkeypatch.setenv('FRAMATEX_RUNTIME_ID', 'test-instance')
+        assert client.get('/api/health').json()['pid'] == os.getpid()
+        assert client.get('/api/health').json()['runtime_id'] == 'test-instance'
+
+
+def test_blocked_scope_query_cannot_freeze_health_or_pages(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from app import access
+    entered, release = Event(), Event()
+    original = access.guard_http_request
+    def locked_guard(request):
+        if request.url.path == '/api/launches/locked-test':
+            entered.set()
+            release.wait(5)
+        return original(request)
+    monkeypatch.setattr(access, 'guard_http_request', locked_guard)
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=2) as threads:
+        blocked = threads.submit(client.get, '/api/launches/locked-test')
+        assert entered.wait(2)
+        try:
+            healthy = threads.submit(client.get, '/api/health')
+            assert healthy.result(timeout=1).status_code == 200
+            assert client.get('/espace-framatex').status_code == 200
+        finally:
+            release.set()
+        assert blocked.result(timeout=2).status_code == 401

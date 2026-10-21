@@ -54,19 +54,25 @@ function toError(status, data, context) {
 }
 
 async function call(path, { method = 'GET', json, context = '' } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
   const headers = {};
   if (method !== 'GET') headers['X-Framatex-Request'] = '1';
   if (json !== undefined) headers['Content-Type'] = 'application/json';
   let res;
   try {
-    res = await fetch(BASE + path, { method, headers, credentials: 'same-origin', body: json !== undefined ? JSON.stringify(json) : undefined });
-  } catch {
+    res = await fetch(BASE + path, { method, headers, credentials: 'same-origin', cache: 'no-store', signal: controller.signal, body: json !== undefined ? JSON.stringify(json) : undefined });
+    // Keep the deadline through body consumption, not only response headers.
+    let data = null;
+    try { data = await res.json(); } catch (err) { if (controller.signal.aborted) throw err; }
+    if (!res.ok) throw toError(res.status, data, context);
+    return data;
+  } catch (err) {
+    if (err instanceof ClientApiError) throw err;
     throw new ClientApiError('network');
+  } finally {
+    clearTimeout(timer);
   }
-  let data = null;
-  try { data = await res.json(); } catch { /* corps vide ou non JSON */ }
-  if (!res.ok) throw toError(res.status, data, context);
-  return data;
 }
 
 // ---- Compte ---------------------------------------------------------------
@@ -115,9 +121,11 @@ function uploadFile(path, file, { title, onProgress } = {}) {
     xhr.withCredentials = true;
     xhr.setRequestHeader('X-Framatex-Request', '1');
     xhr.responseType = 'json';
+    xhr.timeout = 60000;
     xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress?.(e.loaded / e.total); };
     xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) ? resolve(xhr.response) : reject(toError(xhr.status, xhr.response, 'upload'));
     xhr.onerror = () => reject(new ClientApiError('network'));
+    xhr.ontimeout = () => reject(new ClientApiError('network'));
     xhr.send(form);
   });
 }

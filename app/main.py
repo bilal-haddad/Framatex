@@ -17,6 +17,7 @@ from typing import Literal
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -87,7 +88,10 @@ async def request_header_guard(request: Request, call_next):
             return Response("En-tête de protection manquant", status_code=403)
     if request.url.path.startswith('/api/'):
         from .access import guard_http_request
-        denied = guard_http_request(request)
+        # This guard performs synchronous SQLAlchemy/SQLite queries. Never run
+        # it on the ASGI event loop: a locked DB must not freeze /api/health,
+        # static assets and every browser tab on the same local worker.
+        denied = await run_in_threadpool(guard_http_request, request)
         if denied is not None:
             return denied
     return await call_next(request)
@@ -100,7 +104,8 @@ async def response_security_headers(request: Request, call_next):
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "same-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-    if request.url.path in HTML_PAGES or request.url.path.startswith("/api/"):
+    if (request.url.path in HTML_PAGES or request.url.path.startswith("/api/")
+            or request.url.path.startswith('/assets/') and request.url.path.endswith(('.js', '.mjs', '.css'))):
         response.headers.setdefault("Cache-Control", "no-store")
     if request.url.path in HTML_PAGES:
         response.headers.setdefault("Content-Security-Policy",
@@ -206,7 +211,12 @@ def client_index():
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": "0.17.0"}
+    result = {"status": "ok", "version": "0.17.0"}
+    # Local supervision must prove which instance answered, not merely obtain a
+    # 200 from a stale listener. No paths, credentials or session secrets exposed.
+    if os.getenv('FRAMATEX_RUNTIME_ID'):
+        result.update(pid=os.getpid(), runtime_id=os.environ['FRAMATEX_RUNTIME_ID'])
+    return result
 
 @app.post("/api/auth/login")
 def login(payload: LoginPayload, response: Response, request: Request, db: Session = Depends(get_db)):

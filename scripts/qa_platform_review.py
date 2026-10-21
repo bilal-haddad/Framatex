@@ -41,10 +41,18 @@ H = {'X-Framatex-Request': '1'}
 class QA:
     def __init__(self):
         self.results = []
+        self.secrets = set()
+
+    def redact(self, value):
+        result = str(value)
+        for secret in self.secrets:
+            result = result.replace(secret, '[masqué]')
+        return result
 
     def check(self, area, name, ok, detail=''):
-        self.results.append({'area': area, 'check': name, 'ok': bool(ok), 'detail': str(detail)[:400]})
-        print(f"{'OK ' if ok else 'ÉCHEC'} [{area}] {name}{(' — ' + str(detail)[:160]) if detail and not ok else ''}", flush=True)
+        detail = self.redact(detail)
+        self.results.append({'area': area, 'check': name, 'ok': bool(ok), 'detail': detail[:400]})
+        print(f"{'OK ' if ok else 'ÉCHEC'} [{area}] {name}{(' — ' + detail[:160]) if detail and not ok else ''}", flush=True)
         return ok
 
     def run(self, area, name, fn):
@@ -106,20 +114,25 @@ def sha(data):
 def start_server(env):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
-    log = open(Path(env['FRAMATEX_DATA_DIR']) / 'server.log', 'w')
-    server = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', str(port)],
-                              cwd=ROOT, env=env, stdout=log, stderr=log)
+    with (Path(env['FRAMATEX_DATA_DIR']) / 'server.log').open('w', encoding='utf-8') as log:
+        server = subprocess.Popen([sys.executable, str(ROOT / 'scripts' / 'windows_runtime.py'), 'serve', '--port', str(port),
+                                   '--demo-email', 'admin.test@framatex.com', '--no-browser'],
+                                  cwd=ROOT, env=env, stdout=log, stderr=log)
     import httpx
     base = f'http://127.0.0.1:{port}'
-    for _ in range(150):
+    for _ in range(450):
         try:
-            if httpx.get(base + '/api/health', timeout=1).status_code == 200:
+            runtime = json.loads((Path(env['FRAMATEX_DATA_DIR']) / 'runtime.json').read_text())
+            base = runtime['url'].rstrip('/')
+            response = httpx.get(base + '/api/health', timeout=1, trust_env=False)
+            if response.status_code == 200 and response.json().get('runtime_id') == runtime['runtime_id']:
                 return server, base
-        except httpx.TransportError:
+        except (httpx.TransportError, OSError, ValueError):
             pass
         if server.poll() is not None:
-            raise RuntimeError('Serveur de recette arrêté ; voir server.log')
+            raise RuntimeError('Serveur de recette arrêté : ' + (Path(env['FRAMATEX_DATA_DIR']) / 'server.log').read_text()[-4000:])
         time.sleep(.1)
+    server.terminate(); server.wait(timeout=15)
     raise RuntimeError('Serveur de recette non prêt')
 
 
@@ -143,21 +156,28 @@ def platform_server(qa):
         migrate()
         qa.check('Base', 'Base vierge : toutes les migrations appliquées', True)
         password = secrets.token_urlsafe(18) + 'Aa1!'
+        qa.secrets.add(password)
         with SessionLocal() as db:
             role = Role(name='Administrateur')
             db.add(User(name='Responsable recette', email='recette@framatex.test', password_hash=hash_password(password), roles=[role]))
+            # Same target email as -Demo, but only in this disposable database.
+            # No real PC account/password is inspected or changed.
+            db.add(User(name='Administrateur de test', email='admin.test@framatex.com', password_hash=hash_password(password), roles=[role]))
             db.commit()
             admin_user = db.query(User).filter_by(email='recette@framatex.test').one()
             ids = seed(db, admin_user)
+        env['FRAMATEX_SECRET_INPUT'] = password
         server, base = start_server(env)
+        env.pop('FRAMATEX_SECRET_INPUT', None)
         try:
-            yield SimpleNamespace(base=base, password=password, ids=ids, tmp=tmp, env=env)
+            yield SimpleNamespace(base=base, password=password, ids=ids, tmp=tmp, env=env, server=server)
         finally:
             server.terminate()
             try:
                 server.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 server.kill()
+                server.wait(timeout=5)
         run_migration_copy(qa, tmp, env)
 
 
@@ -165,7 +185,9 @@ def write_report(qa, output, name='qa-results.json'):
     passed = sum(r['ok'] for r in qa.results)
     report = {'tested_at': datetime.now(timezone.utc).isoformat(),
               'source_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
-              'passed': passed, 'failed': len(qa.results) - passed, 'checks': qa.results}
+              'source_dirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).strip()),
+              'passed': passed, 'failed': len(qa.results) - passed, 'checks': qa.results,
+              'runtime': getattr(qa, 'runtime', None)}
     output.mkdir(parents=True, exist_ok=True)
     (output / name).write_text(json.dumps(report, ensure_ascii=False, indent=2))
     print(f"\n{passed}/{len(qa.results)} vérifications réussies.", flush=True)
@@ -179,6 +201,7 @@ def main():
     qa = QA()
     with platform_server(qa) as ctx:
         run_checks(qa, ctx.base, ctx.password, ctx.ids, ctx.tmp)
+        check_runtime_liveness(qa, ctx)
     sys.exit(write_report(qa, args.output.resolve()))
 
 
@@ -207,10 +230,47 @@ def run_migration_copy(qa, tmp, env):
         qa.check('Base', 'Copie de base existante : aucune perte de données', before == after, {'avant': before, 'après': after})
 
 
+def check_runtime_liveness(qa, ctx):
+    """Require all five probes, then an independent post-browser HTTP check.
+    Called while still inside platform_server: its cleanup is not readiness.
+    """
+    import httpx
+    path = Path(ctx.tmp) / 'runtime.json'
+    deadline = time.monotonic() + 75
+    report = {}
+    while time.monotonic() < deadline and ctx.server.poll() is None:
+        try:
+            report = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            pass
+        if report.get('status') in ('ready', 'degraded'):
+            break
+        time.sleep(.2)
+    checks = report.get('health', [])
+    for offset in (0, 2, 10, 30, 60):
+        sample = next((s for s in checks if s['at'] == offset), {})
+        qa.check('Runtime', f'T+{offset}s : même PID, LISTENING et /api/health 200 rapide',
+                 sample.get('ok') is True and sample.get('pid') == report.get('pid') and sample.get('status') == 200
+                 and sample.get('ms', 99999) < 3000 and sample.get('listening') is True, sample)
+    qa.check('Runtime', 'Login admin.test@framatex.com jetable et Chromium réels : aucun faux succès ni arrêt après sondes',
+             report.get('status') == 'ready' and not report.get('errors') and ctx.server.poll() is None
+             and any('admin.test@framatex.com' in check for check in report.get('checks', [])), report.get('errors'))
+    def alive_after_browser():
+        with httpx.Client(timeout=3, trust_env=False) as client:
+            value = client.get(ctx.base + '/api/health').json()
+            assert value.get('pid') == report['pid'] and value.get('runtime_id') == report['runtime_id']
+            for route in ('/', '/espace-client', '/espace-framatex'):
+                assert client.get(ctx.base + route).status_code == 200, route
+        assert ctx.server.poll() is None
+    qa.run('Runtime', 'Après fermeture du navigateur de test : serveur et trois pages toujours disponibles', alive_after_browser)
+    # Keep evidence outside the deleted temporary DB without embedding secrets.
+    qa.runtime = report
+
+
 def run_checks(qa, base, password, ids, tmp):
     import httpx
-    admin = httpx.Client(base_url=base, headers=H, timeout=60)
-    anon = httpx.Client(base_url=base, timeout=30)
+    admin = httpx.Client(base_url=base, headers=H, timeout=60, trust_env=False)
+    anon = httpx.Client(base_url=base, timeout=30, trust_env=False)
 
     # ------------------------------------------------------------- Routes & landing
     def routes():
@@ -260,7 +320,13 @@ def run_checks(qa, base, password, ids, tmp):
     # ------------------------------------------------------------- Dashboard / complétude / manquants
     dash = admin.get('/api/workspace/dashboard').json()
     def kpis():
-        assert dash['kpis'] and all(isinstance(k.get('value', 0), int) for k in dash['kpis'] if isinstance(k, dict)) or dash['kpis']
+        k = dash['kpis']; rows = dash['launches']
+        assert k and all(type(value) is int and value >= 0 for value in k.values()), k
+        assert k['active_launches'] == len(rows) == 5
+        assert k['complete_launches'] == sum(r['completion']['state'] == 'complete' for r in rows)
+        assert k['incomplete_launches'] == sum(r['completion']['state'] == 'incomplete' for r in rows)
+        assert k['missing_documents'] == len(dash['missing_documents'])
+        assert k['pending_documents'] > 0 and k['alerts'] > 0 and k['complete_launches'] > 0
     qa.run('Dashboard', 'KPI calculés à partir des données réelles', kpis)
     def missing_docs():
         missing = {(m['order_ref'], m['folder'], m['title']) for m in dash['missing_documents']}
@@ -430,6 +496,7 @@ def run_checks(qa, base, password, ids, tmp):
         assert r.status_code == 200, r.text
         res = r.json()
         assert res['human_validation_required'] is True and res['classification']['needs_confirmation'] is True
+        assert res['method'] == 'image_ocr' and '1800' in res['text_excerpt'], res
         assert res['classification']['suggestions'], res
         after = admin.get(f'/api/launches/{B}').json()
         assert sum(len(f.get('documents', [])) for f in after['folders']) == count_before, 'document créé sans confirmation'
@@ -487,9 +554,9 @@ def run_checks(qa, base, password, ids, tmp):
         return res['total'] > 0 and all(predicate(x) for x in res['items']), res['total']
     checks = [('commande', {'q': 'FR-DEMO-2026-0143'}, lambda x: x['order_ref'] == 'FR-DEMO-2026-0143'),
               ('client', {'q': 'Collection Atlas'}, lambda x: 'Collection Atlas' in (x['client_name'] or '')),
-              ('modèle', {'q': 'Pantalon lin'}, lambda x: True),
-              ('référence', {'q': 'LP-DEMO-C'}, lambda x: True),
-              ('nom de document', {'q': 'Pièce douanière'}, lambda x: True),
+              ('modèle', {'q': 'Pantalon lin'}, lambda x: x['launch_id'] == C),
+              ('référence', {'q': 'LP-DEMO-C'}, lambda x: x['launch_id'] == C),
+              ('nom de document', {'q': 'Pièce douanière'}, lambda x: 'pièce douanière' in x['title'].lower()),
               ('type documentaire', {'doc_type': 'Facture'}, lambda x: x['doc_type'] == 'Facture'),
               ('sous-dossier', {'folder': 'bleu'}, lambda x: x['folder'] == 'bleu')]
     for label, params, pred in checks:
@@ -507,6 +574,7 @@ def run_checks(qa, base, password, ids, tmp):
 
     # ------------------------------------------------------------- Client ↔ FRAMATEX
     client_pw = secrets.token_urlsafe(16) + 'Aa1!'   # comptes Client de recette, base temporaire
+    qa.secrets.add(client_pw)
     def register(email, company):
         r = anon.post('/api/client/register', headers=H, json={'raison_sociale': company, 'nom_contact': 'Contact recette', 'email': email,
                       'telephone': '+33 6 00 00 00 00', 'adresse': '1 rue de la Recette, 59000 Lille', 'pays': 'France', 'password': client_pw})
@@ -669,6 +737,7 @@ def run_checks(qa, base, password, ids, tmp):
     role = admin.post('/api/admin/roles', json={'name': 'Contrôle recette', 'permissions': [
         {'action': 'launch.read'}, {'action': 'document.read', 'folder': 'jaune'}, {'action': 'document.review', 'folder': 'jaune'}]})
     collab_pw = secrets.token_urlsafe(18) + 'Aa1!'
+    qa.secrets.add(collab_pw)
     created = admin.post('/api/admin/users', json={'name': 'Contrôleur recette', 'email': 'controle@framatex.test',
                                                     'password': collab_pw, 'role_ids': [role.json()['id']]})
     qa.check('FRAMATEX', 'Administration : rôle et compte collaborateur créés', role.status_code == 201 and created.status_code == 201,
@@ -793,7 +862,7 @@ def run_checks(qa, base, password, ids, tmp):
     def audit_trail():
         items = admin.get('/api/workspace/activity', params={'limit': 200}).json()['items']
         seen = {i['action'] for i in items}
-        wanted = {'document.upload', 'document.version.add', 'document.review', 'document.comment', 'impact.decision',
+        wanted = {'session.login', 'client.order_request.launch_created', 'document.upload', 'document.version.add', 'document.review', 'document.comment', 'impact.decision',
                   'completeness.exception.set', 'experience.note.create', 'client.register', 'client.status.update',
                   'client.order_request.status_changed', 'client.document_request.correction_required',
                   'client.document_request.accepted', 'client.shared_document.published', 'client.shared_document.revoked'}

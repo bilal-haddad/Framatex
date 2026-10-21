@@ -88,8 +88,10 @@ def client_login(view, email, password):
 def full_journey(qa, browser, base, admin_password, captures):
     """Parcours complet dans l'interface, à 1440 px."""
     client_pw = secrets.token_urlsafe(16) + 'Aa1!'
+    qa.secrets.add(client_pw)
     email = f'demo.client.{secrets.token_hex(3)}@recette.test'
     client = Browser(browser, base, 1440, captures)
+    from demo_browser_full import nav
     admin = Browser(browser, base, 1440, captures)
     page, adm = client.page, admin.page
     try:
@@ -122,7 +124,7 @@ def full_journey(qa, browser, base, admin_password, captures):
             order = ['Actions prioritaires', 'Documents manquants', 'Complétude des dossiers', 'Alertes et incohérences', 'Dernières activités']
             assert [h for h in headings if h in order] == order, headings
             admin.check_page('parcours-dashboard')
-            adm.evaluate("navigate('clients')")
+            nav(adm, 'clients')
             adm.wait_for_selector(f'tr:has-text("{email}") button[data-ops-client]')
             adm.click(f'tr:has-text("{email}") button[data-ops-client]')
             adm.wait_for_selector(f'tr:has-text("{email}") button:has-text("Suspendre")')
@@ -145,11 +147,14 @@ def full_journey(qa, browser, base, admin_password, captures):
             page.wait_for_selector('.req-row')
             text = page.locator('main').inner_text()
             assert 'Brouillon' in text and 'Envoyée' in text, text[:400]
+            page.locator('.req-row', has_text='Chemise démonstration Brouillon').click()
+            page.locator('#submit-draft').click()
+            page.wait_for_selector('.side-status:has-text("Envoyée")')
             client.check_page('parcours-mes-demandes')
         qa.run('Navigateur', 'Client : connexion, demande en brouillon et demande envoyée depuis le formulaire', requests)
 
         def accept_and_open():
-            adm.evaluate("navigate('clients')")
+            nav(adm, 'clients')
             row = adm.locator('[data-ops-request]', has_text='Chemise démonstration Envoyée')
             row.first.wait_for()
             row.first.click()
@@ -161,11 +166,30 @@ def full_journey(qa, browser, base, admin_password, captures):
             assert adm.locator('.folder-card').count() == 4
             origin = adm.locator('.ops-client-origin').inner_text()
             assert 'REF-DEMO-UI' in origin and '720 pièces' in origin, origin
+            order = next(r for r in admin.context.request.get(base + '/api/admin/client-order-requests').json() if r['article'] == 'Chemise démonstration Envoyée')
+            once = admin.context.request.post(base + f'/api/admin/client-order-requests/{order["id"]}/launch', headers=recette.H)
+            assert once.status == 200
+            assert client.context.request.get(base + f'/api/launches/{once.json()["launch"]["id"]}').status == 401
             admin.check_page('parcours-dossier-jaune-cree')
-            adm.evaluate("navigate('clients')")
+            nav(adm, 'clients')
             adm.locator('[data-ops-request]', has_text='Chemise démonstration Envoyée').first.click()
             adm.wait_for_selector('#cw-open-launch')
+            adm.locator('#cw-open-launch').click()
+            adm.wait_for_selector('#ops-launch-summary .ops-client-origin')
         qa.run('Navigateur', 'FRAMATEX : « Accepter et créer le Dossier Jaune » ouvre le dossier (4 sous-dossiers, origine Client)', accept_and_open)
+
+        def reject_other():
+            nav(adm, 'clients')
+            adm.locator('[data-ops-request]', has_text='Chemise démonstration Brouillon').first.click()
+            adm.select_option('#cw-order-status', 'under_review')
+            adm.locator('#cw-order-status-form button[type=submit]').click()
+            adm.wait_for_selector('.modal:has-text("Statut de la demande : En cours d’étude")')
+            adm.select_option('#cw-order-status', 'rejected')
+            adm.locator('#cw-order-status-form button[type=submit]').click()
+            adm.wait_for_selector('.modal:has-text("Statut de la demande : Refusée")')
+            page.goto(base + '/espace-client#/demandes')
+            page.wait_for_selector('.req-row:has-text("Refusée")')
+        qa.run('Navigateur', 'Brouillon soumis → under_review → rejected sur une autre demande, statut Client visible', reject_other)
 
         def client_sees_acceptance():
             page.goto(base + '/espace-client#/demandes')
@@ -186,6 +210,7 @@ def full_journey(qa, browser, base, admin_password, captures):
 
 def width_tour(qa, browser, base, admin_password, client_email, client_pw, captures):
     """Pages principales des trois espaces, à chaque largeur."""
+    from demo_browser_full import nav
     for width in WIDTHS:
         view = Browser(browser, base, width, captures)
         page = view.page
@@ -208,11 +233,11 @@ def width_tour(qa, browser, base, admin_password, client_email, client_pw, captu
             internal_login(view, 'recette@framatex.test', admin_password)
             view.check_page('framatex-dashboard')
             for name in ('launches', 'search', 'audit', 'experience', 'clients'):
-                page.evaluate(f"navigate('{name}')")
+                nav(page, name)
                 page.wait_for_selector('.ops-heading h1')
                 view.check_page(f'framatex-{name}')
-            launch = page.evaluate("fetch('/api/launches').then(r => r.json()).then(l => l.find(x => x.order_ref === 'FR-DEMO-2026-0142').id)")
-            page.evaluate(f"openLaunch('{launch}', 'jaune')")
+            nav(page, 'launches')
+            page.locator('#ops-launch-results tr', has_text='FR-DEMO-2026-0142').locator('[data-ops-target]').click()
             page.wait_for_selector('#ops-launch-summary')
             assert page.locator('.folder-card').count() == 4
             view.check_page('framatex-dossier-jaune')
@@ -242,18 +267,10 @@ def main():
         if args.no_browser:
             print('Parcours navigateur non exécuté (--no-browser).', flush=True)
         else:
-            try:
-                from playwright.sync_api import sync_playwright
-            except ImportError:
-                print('Parcours navigateur non exécuté : Playwright absent (pip install -r requirements-dev.txt).', flush=True)
-            else:
-                with sync_playwright() as pw:
-                    browser = pw.chromium.launch()
-                    try:
-                        email, client_pw = full_journey(qa, browser, ctx.base, ctx.password, captures)
-                        width_tour(qa, browser, ctx.base, ctx.password, email, client_pw, captures)
-                    finally:
-                        browser.close()
+            from demo_browser_full import run_browser_suite
+            qa.run('Navigateur', 'Suite Chromium complète exécutée (aucun succès si Playwright/Chrome manque)',
+                   lambda: run_browser_suite(qa, ctx, captures))
+        recette.check_runtime_liveness(qa, ctx)
     code = recette.write_report(qa, output, 'demo-results.json')
     print(f'Durée : {time.monotonic() - started:.0f} s · captures : {captures}', flush=True)
     sys.exit(code)

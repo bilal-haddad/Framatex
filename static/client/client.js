@@ -1,7 +1,7 @@
 // Espace Client FRAMATEX — interface (routeur par ancre, écrans, formulaires).
 // Toutes les données passent par l'API client réelle (static/client/api.js → app/client_routes.py).
 
-import * as api from './api.js';
+import * as api from './api.js?v=runtime-final-1';
 import {
   icon, esc, fmtDate, fmtQty, fmtSize, statusBadge, REQUEST_STATUS, DOCUMENT_STATUS, documentStatusBadge, field, passwordField,
   setFieldError, clearErrors, showFormAlert, bindPasswordToggles, setLoading, toast,

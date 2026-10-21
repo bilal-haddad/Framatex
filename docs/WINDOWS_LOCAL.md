@@ -1,105 +1,159 @@
-# Démonstration locale sous Windows
+# Démarrage fiable — Windows PowerShell 5.1 et suivants
 
-Depuis le dossier du dépôt, dans PowerShell :
+Depuis la racine du dépôt :
 
 ```powershell
 .\scripts\start_windows.cmd -Demo
 ```
 
-Le lanceur vérifie tout, démarre le serveur, ouvre Chrome sur la landing et reste
-actif dans la fenêtre. **Ctrl+C** ou la fermeture de la fenêtre arrête le serveur.
-Après Ctrl+C, Windows peut demander « Terminer le programme de commandes (O/N) ? » :
-répondez O, le serveur est déjà arrêté.
+Le port est choisi et l'unique URL est ouverte automatiquement. Gardez cette
+fenêtre ouverte : **Ctrl+C ou fermeture volontaire = arrêt du serveur**. La fin
+d'une sonde HTTP, du test Chromium ou l'ouverture de Chrome ne l'arrête pas.
 
-| Option | Effet |
-| --- | --- |
-| `-Demo` | Compte `admin.test@framatex.com` (créé si absent) et dossiers A–E (sans doublon), connexion admin vérifiée |
-| `-Port 8010` | Port de départ (8000 par défaut ; le suivant libre est pris si besoin) |
-| `-NoBrowser` | N'ouvre pas le navigateur |
-| `-CheckOnly` | Vérifie tout puis arrête le serveur (diagnostic) |
-| `-Reload` | Rechargement automatique du code (développement uniquement) |
+## Préparation et administrateur
 
-## Mot de passe du compte de test
+Python 3.11+ est requis. Le lanceur utilise exclusivement le `.venv` Windows de
+ce dépôt, créé si absent, sans effacer un environnement existant. Il vérifie les
+imports et installe les dépendances manquantes. En `-Demo`, il prépare Playwright
+et Chromium : Chrome/Edge installé, sinon téléchargement Playwright. Le premier
+démarrage nécessite Internet. Après nettoyage des anciens serveurs, SQLite est
+contrôlée, sauvegardée et migrée selon le mécanisme existant. Une intégrité SQLite
+non valide est bloquante. Aucun schéma ni migration métier n'est ajouté ici.
 
-Aucun mot de passe n'est écrit dans le dépôt, les scripts, les journaux ou les captures.
+Compte : `admin.test@framatex.com`.
 
-- **Première fois.** Le lanceur demande le mot de passe à définir pour
-  `admin.test@framatex.com`, deux fois, en saisie masquée (12 caractères minimum).
-  Il n'est conservé qu'en mémoire, le temps de créer le compte (hash Argon2) et de
-  vérifier la connexion.
-- **Fois suivantes.** Le lanceur demande le mot de passe pour vérifier réellement
-  la connexion (`POST /api/auth/login`, puis `GET /api/auth/me`). Appuyez sur
-  Entrée pour passer cette vérification.
-- **Sans saisie.** On peut le fournir dans une variable temporaire de la session
-  PowerShell : `$env:FRAMATEX_DEMO_PASSWORD = Read-Host -AsSecureString | ConvertFrom-SecureString -AsPlainText`
-  (PowerShell 7). Le lanceur la lit, puis la retire de l'environnement avant de
-  démarrer le serveur.
+- Absent : mot de passe demandé deux fois, en saisie masquée.
+- Existant : mot de passe demandé en saisie masquée, vérification **obligatoire**.
+- Aucun compte existant réactivé, promu ou réinitialisé automatiquement.
+- Dossiers de démonstration A–E chargés sans doublon.
+- POST login 200, GET me (email, `admin=true`, rôle `Administrateur`), dashboard
+  authentifié et vraie connexion Chromium vérifiés.
 
-## Étapes du lanceur
+Aucun mot de passe dans Git, les arguments ou les journaux : mémoire et variable
+enfant temporaire, retirée avant le worker ; stockage Argon2 existant.
+`FRAMATEX_DEMO_PASSWORD` reste disponible pour une automatisation éphémère ; ne
+pas l'enregistrer dans un profil PowerShell ou un fichier.
 
-1. **Code.** Branche, commit, présence de tout `final/platform-review`, syntaxe Python.
-2. **Python.** Environnement `.venv` créé si besoin, dépendances installées si elles manquent.
-3. **Réseau.** Variables et proxy système. Seules les adresses locales sont exclues
-   du proxy.
-4. **Port.**
-   - Les anciens serveurs FRAMATEX de ce dossier sont arrêtés.
-   - Si 8000 est pris par un autre programme, celui-ci n'est pas touché et le port
-     suivant libre est utilisé (8001, 8002…).
-5. **Données.** Dossier `data`, verrou SQLite, sauvegarde du jour dans `data\backups`,
-   migrations.
-6. **Comptes.** Administrateurs et comptes Client ; en `-Demo`, compte de test et
-   dossiers A–E.
-7. **Serveur.** Uvicorn sans `--reload`, journaux dans
-   `data\logs\uvicorn-<date>.err.log`, serveur lié à la fenêtre.
-8. **Vérifications HTTP réelles.**
-   - `/api/health`, `/`, `/espace-client`, `/espace-framatex` ;
-   - les CSS / JS des trois pages, avec leur type ;
-   - `Test-NetConnection` et `curl` ;
-   - la connexion admin en `-Demo`.
-9. **Navigateur.** Chrome est ouvert sur la landing ; la fenêtre affiche ensuite
-   l'activité du serveur.
+## Processus et ports
 
-En cas d'échec, le lanceur affiche :
+`windows_runtime.py` inventorie tous les processus (CIM), parents, sockets IPv4/
+IPv6 (netstat indépendant de la langue Windows) et cwd des Python (psutil Windows).
+Un worker `.venv` peut réellement utiliser l'exécutable **global** Python.
 
+Seuls les serveurs identifiés comme appartenant à ce dépôt et leurs descendants
+sont arrêtés, sur **tous** leurs ports : Uvicorn avec preuve chemin/cwd,
+superviseur/worker du lanceur, worker reload `spawn_main` en écoute avec cwd exact.
+PID et date de création sont revérifiés avant `taskkill /T /F` des anciens arbres.
+Les autres programmes restent intacts. Un Python en écoute au cwd inaccessible
+provoque un diagnostic **bloquant**, pas un arrêt hasardeux ni un basculement
+laissant potentiellement un vieux FRAMATEX actif. Relancer sous le compte Windows
+qui a démarré cet ancien serveur.
+
+La disparition des processus/sockets est attendue. 8000 est préféré ; un autre
+programme identifié sur 8000 est conservé et 8001, 8002, etc. sont essayés (20
+candidats supplémentaires maximum). Un bind refusé couvre aussi les réservations
+Windows Hyper-V/WSL.
+
+Le socket choisi utilise `SO_EXCLUSIVEADDRUSE` et n'est **jamais libéré entre le
+test et Uvicorn** : transfert `socket.share/fromshare` sous Windows, descripteur
+hérité sous Linux. Le worker annonce son vrai PID avant transfert, distinct si
+nécessaire du redirecteur `.venv/python.exe`.
+
+## Cycle de vie
+
+PowerShell prépare puis attend le superviseur Python au premier plan. Uvicorn
+n'est plus lancé par `Start-Process`, ni capturé dans un pipeline. Aucun callback
+PowerShell, `Register-EngineEvent` ou `WaitForExit` PowerShell ne possède sa durée
+de vie.
+
+Le superviseur possède un Job Windows non héritable `KILL_ON_JOB_CLOSE`. Le
+redirecteur et le vrai worker sont rattachés, avec vérification du Job déjà
+hérité. Le worker attend son socket avant démarrage. stdout/stderr vont directement
+dans des **fichiers**, sans pipe à vider ni console susceptible de bloquer Uvicorn
+pendant une sélection « Édition rapide ». Une vérification facultative en échec
+laisse le serveur actif, en état dégradé.
+
+Une identité d'instance non secrète et le PID sont vérifiés dans `/api/health` :
+un ancien serveur répondant simplement 200 ne suffit pas. Sans
+`FRAMATEX_RUNTIME_ID`, ces champs additionnels ne sont pas exposés.
+
+Depuis la première réponse de la bonne instance, un moniteur indépendant contrôle
+T+0, T+2, T+10, T+30, T+60 : même PID, réponse < 3 s et socket LISTENING. Windows
+compare aussi les propriétaires à netstat. Le succès global n'est annoncé qu'après
+ces cinq sondes, sans échec des pages, assets, connexion ou Chromium.
+La santé HTTP continue ensuite d'être vérifiée toutes les 15 secondes ; un échec
+met l'état en dégradé sans provoquer l'arrêt du serveur.
+
+`data/runtime.json` (ou `FRAMATEX_DATA_DIR/runtime.json`) contient notamment :
+
+```json
+{"host":"127.0.0.1","port":8001,"url":"http://127.0.0.1:8001/","pid":1234}
 ```
-  ÉTAPE    : 5. Données (data, SQLite, sauvegarde, migrations)
-  CAUSE    : Base SQLite verrouillée par un autre programme.
-  SOLUTION : Fermez DB Browser for SQLite, un autre serveur FRAMATEX ou la synchronisation de fichiers, puis relancez.
-```
 
-Le journal complet, sans mot de passe, est dans
-`data\logs\start-windows-AAAAMMJJ-HHMMSS.log`.
+Également : superviseur, identité, contrôles et état `checking/ready/degraded`.
+Retrait à l'arrêt uniquement si le fichier appartient encore à cette instance.
+Historique : `data/logs/runtime-<identité>.json`, `uvicorn-*.out.log` et
+`uvicorn-*.err.log`. En cas de mort imprévue, la vraie fin de stderr est affichée.
+Un rapport historique avec `stopped_at` ne prouve pas qu'un serveur tourne encore.
 
-## Pourquoi Chrome affichait ERR_CONNECTION_REFUSED
+## Interface et cache
 
-Ce message signifie que plus aucun serveur n'écoute sur le port de l'onglet. Avec
-le premier lanceur, cela pouvait arriver de quatre façons :
+API internes : délai de 8 s incluant le corps, 60 s pour les fichiers. API Client :
+8 s, upload XHR 60 s. Garde indépendante de `app.js` : après 10 s de démarrage
+bloqué, y compris script principal absent/MIME invalide/en erreur, affichage :
 
-| Cause | Correction |
-| --- | --- |
-| Toute erreur du lanceur **après** le démarrage (ouverture du navigateur, contrôle réseau…) passait par le nettoyage final, qui arrêtait le serveur. | Une fois le serveur prêt, les erreurs sont signalées mais ne l'arrêtent plus. |
-| Une fenêtre fermée pouvait laisser un serveur orphelin sur 8000 ; le lancement suivant prenait 8001, et l'ancien onglet visait un port qui ne répondait plus. | Le serveur est lié à la fenêtre (objet « job » Windows) et les anciens serveurs FRAMATEX sont arrêtés au démarrage : le port reste stable. |
-| Une sélection dans la console (« Édition rapide ») pouvait geler le serveur, qui écrivait ses journaux dans la console. | Les journaux du serveur vont dans des fichiers ; la fenêtre ne fait que les afficher. |
-| Ctrl+C, la fermeture de la fenêtre ou `-CheckOnly` arrêtent le serveur. | Comportement voulu, désormais annoncé clairement, avec la cause de tout arrêt imprévu. |
+> Impossible de joindre le serveur FRAMATEX. — Réessayer
 
-Si le serveur s'arrête de lui-même, la fenêtre l'indique avec ÉTAPE / CAUSE / SOLUTION
-et les dernières lignes de son journal.
+Le bouton recharge la même URL. Un vrai 401 affiche la connexion ; une API
+indisponible affiche une erreur. L'initialisation attend `DOMContentLoaded` et
+toutes les extensions. Les changements d'écran sont sérialisés : une réponse
+ancienne ne remplace plus la page suivante.
 
-## Autres causes connues traitées
+Pages/API et JS/CSS : `Cache-Control: no-store`. Les principaux points d'entrée
+ont une clé `?v=runtime-final-1`, pour sortir d'un ancien cache déjà frais.
+Aucun service worker. Types MIME Windows corrigés conservés ; CSP, `nosniff`,
+cookies HttpOnly et règles d'autorisation inchangés.
 
-| Symptôme | Cause | Traitement |
-| --- | --- | --- |
-| « Application startup complete » mais aucune réponse | En `--reload`, Uvicorn peut s'attacher à un port déjà occupé par un ancien serveur figé (option `SO_REUSEADDR` sous Windows). | Démarrage sans `--reload`, après un test d'accès exclusif au port. |
-| Page blanche, erreurs « MIME type » | Le registre Windows déclare `.js` en `text/plain` ; avec `nosniff`, Chrome refuse le fichier. | Types fixés dans `app/main.py`. |
-| `curl` bloqué mais Chrome fonctionne | Variable `HTTP_PROXY` sans exception locale. | `localhost,127.0.0.1,::1` ajoutés à `NO_PROXY`. |
-
-## Recette complète sur une base temporaire
+## Diagnostic en lecture seule
 
 ```powershell
-.venv\Scripts\python.exe scripts\demo_full_platform.py
+.\scripts\diagnose_windows.cmd
 ```
 
-Elle exécute 111 vérifications : la recette API, plus un parcours Chromium à 1440,
-1024, 820 et 390 px. Elle utilise une base jetable et des mots de passe générés en
-mémoire. Le parcours navigateur demande Playwright : `pip install -r requirements-dev.txt`
-puis `python -m playwright install chromium`.
+Affiche branche, SHA, Python, DB (URL externe masquée), migrations appliquées
+(SQLite `mode=ro`), ports/PID, ancien serveur, santé/identité et URL finale.
+Appels externes bornés : budget inférieur à 30 s sur une machine normalement
+réactive. Aucun import `app.core`, donc aucune DB, clé, table ou migration créée.
+Une URL déclarée n'est pas présentée comme une preuve de disponibilité.
+
+## Recette reproductible
+
+```powershell
+.venv\Scripts\python.exe -m pytest -q
+.venv\Scripts\python.exe scripts\qa_platform_review.py
+.venv\Scripts\python.exe scripts\demo_full_platform.py
+.venv\Scripts\python.exe scripts\demo_browser_full.py
+```
+
+Les deux dernières commandes exécutent la même suite API + vrai Chromium + T+60,
+sur base temporaire. Captures 1440/1024/820/390 px ; cycle documentaire A/B existant
+réutilisé intégralement. Les pannes HTTP/timeout/MIME/script absent sont injectées
+dans des contextes dédiés puis « Réessayer » réellement cliqué. Playwright absent
+ou navigateur non démarré = échec, jamais recette complète passée.
+
+OCR : Tesseract et langues `fra/eng` requis dans PATH/TESSDATA_PREFIX. Le lanceur
+ne prétend pas installer Tesseract ; les recettes OCR réelles restent rouges
+s'il manque.
+
+## Limites et options
+
+Développé/exercé sous Linux : worker, socket, API, Chromium, migration de copie,
+T+60 réels. La politique Windows PID/parents/cwd/ports/netstat a des tests unitaires
+portables. **CIM, WSADuplicateSocket, Job Object et Ctrl+C/fermeture d'une vraie
+console PowerShell 5.1 restent à exécuter sur Windows.** Aucun succès natif Windows
+n'est revendiqué sur la seule foi des tests Linux.
+
+`-NoBrowser` : pas d'ouverture visible, mais smoke test headless en `-Demo`.
+`-Port` : premier candidat. `-CheckOnly` : arrêt automatique **explicitement
+demandé**, après T+60. `-Reload` : signalé et ignoré, pour conserver un worker
+unique et un port stable.

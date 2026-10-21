@@ -92,7 +92,7 @@ python -m app.seed_quality_demo
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-**Démonstration sous Windows, en une commande** : `.\scripts\start_windows.cmd -Demo`. Elle vérifie le code, Python (`.venv`), le proxy, le port, la base, les migrations et les comptes. Elle crée si besoin `admin.test@framatex.com` (mot de passe saisi, jamais enregistré) et les dossiers A–E, démarre Uvicorn, contrôle les pages et la connexion admin, ouvre Chrome et garde le serveur actif. Voir [`docs/WINDOWS_LOCAL.md`](docs/WINDOWS_LOCAL.md). Évitez `--reload` sous Windows en dehors du développement : il peut démarrer « avec succès » sur un port déjà occupé.
+**Démonstration sous Windows, en une commande** : `.\scripts\start_windows.cmd -Demo`. Elle prépare `.venv`, vérifie/sauvegarde/migre la base, contrôle l'admin de démo (mot de passe masqué obligatoire) et les dossiers A–E, nettoie uniquement les anciens serveurs de ce dépôt et réserve un socket exclusif. Le superviseur reste au premier plan jusqu'à Ctrl+C, vérifie l'instance à T+0/2/10/30/60 s, teste réellement les interfaces avec Chromium et ouvre l'unique URL choisie. Diagnostic sans modifier la DB : `.\scripts\diagnose_windows.cmd`. Voir les [détails et limites Windows natives](docs/WINDOWS_LOCAL.md).
 
 Si l'activation PowerShell échoue, utilisez directement `.venv\Scripts\python.exe` à la place de `python` pour les commandes suivantes. Le programme demande un mot de passe de 12 caractères minimum pour le premier administrateur : **aucun mot de passe par défaut n'est fourni**.
 

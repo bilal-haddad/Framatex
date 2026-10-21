@@ -31,6 +31,8 @@ MODULES = {
     'pydantic': 'pydantic', 'openpyxl': 'openpyxl', 'pypdf': 'pypdf', 'docx': 'python-docx',
     'PIL': 'Pillow', 'pytesseract': 'pytesseract', 'fitz': 'PyMuPDF', 'qrcode': 'qrcode',
 }
+if os.name == 'nt':
+    MODULES['psutil'] = 'psutil'
 
 
 def ok(text):
@@ -89,6 +91,7 @@ def check_db() -> int:
             return 2
         if result != 'ok':
             warn(f'Contrôle d’intégrité SQLite : {result}')
+            return 4
         else:
             ok(f'Base SQLite libre et cohérente : {database}')
         backups = DATA_DIR / 'backups'
