@@ -4,7 +4,7 @@ function qualityStatus(s){return ({consistent:'Cohérent',difference:'Écart à 
 function qualityTag(s){return `<span class="tag ${s==='consistent'?'green':s==='difference'||s==='unit_mismatch'?'orange':'blue'}">${e(qualityStatus(s))}</span>`}
 function renderQuality(){
  const results=state.qualityReport?.rows||[], inspections=state.excelInspections||[];
- const differences=results.filter(r=>r.status==='difference'&&!r.decision).length;
+ const differences=results.filter(r=>r.status==='difference'&&r.decision?.status!=='justified').length;
  const flags=inspections.filter(x=>x.inspection).reduce((n,x)=>n+x.inspection.findings.filter(f=>f.type!=='inspection_limit').length,0);
  const docs=(state.detail?.folders||[]).filter(f=>f.can_read&&f.can_write).flatMap(f=>f.documents).filter(d=>d.latest);
  return `<section class="quality-root" aria-label="Contrôles de fiabilité">

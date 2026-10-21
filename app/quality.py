@@ -99,20 +99,21 @@ def analyze_workbook(path: Path, baseline: Path | None):
                 'findings':[{'type':'inspection_limit','level':'warning','sheet':'','cell':'',
                              'message':str(ex)[:200]}]}
     findings=[]
-    def add(kind, level, sheet, coord, message):
+    def add(kind, level, sheet, coord, message, before=None, after=None):
         if len(findings) < MAX_FINDINGS:
-            findings.append({'type':kind,'level':level,'sheet':sheet,'cell':coord,'message':message})
+            findings.append({'type':kind,'level':level,'sheet':sheet,'cell':coord,'message':message,
+                             'before':before,'after':after})
     for (sheet,coord),(is_formula, value) in current.items():
         if is_formula and '#REF!' in value.upper():
-            add('broken_reference','critical',sheet,coord,'Référence #REF! détectée dans la formule')
+            add('broken_reference','critical',sheet,coord,'Référence #REF! détectée dans la formule', after=value)
     if baseline:
         for (sheet,coord),(was_formula, prev) in before.items():
             if not was_formula:continue
             now=current.get((sheet,coord))
             if now is None or not now[0]:
-                add('formula_removed','critical',sheet,coord,'Formule remplacée ou supprimée depuis la version précédente')
+                add('formula_removed','critical',sheet,coord,'Formule remplacée ou supprimée depuis la version précédente', prev, now[1] if now else None)
             elif now[1] != prev:
-                add('formula_changed','warning',sheet,coord,'Formule modifiée : vérifier la logique du calcul')
+                add('formula_changed','warning',sheet,coord,'Formule modifiée : vérifier la logique du calcul', prev, now[1])
         status='reviewed'
     else:
         status='first_version'

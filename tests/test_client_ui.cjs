@@ -1,32 +1,40 @@
 'use strict';
-// Espace Client (frontend isolé) : garde-fous de structure et de sécurité.
+// Espace Client (static/client/) : branchement à l'API réelle, isolation et sécurité.
 const fs = require('fs'), path = require('path'), assert = require('node:assert/strict');
 const dir = 'static/client';
 const read = f => fs.readFileSync(path.join(dir, f), 'utf8');
-const html = read('index.html'), api = read('api.js'), demo = read('demo-data.js'), client = read('client.js'), ui = read('components/ui.js');
-const all = [api, demo, client, ui].join('\n');
+const html = read('index.html'), api = read('api.js'), client = read('client.js'), ui = read('components/ui.js');
+const all = [api, client, ui].join('\n');
 
-// Isolation : aucune dépendance vers l'Espace FRAMATEX interne.
-assert(!/\/assets\/(app|workspace|design-019|styles)\.(js|css)/.test(html + all));
+// Plus aucune démonstration dans l'exécution normale.
+assert(!fs.existsSync(path.join(dir, 'demo-data.js')));
+assert(!/demo/i.test(html + all));
+assert(api.includes('export const API_CONNECTED = true'));
+// Isolation : aucune dépendance vers l'Espace FRAMATEX interne ni vers ses API.
+assert(!/\/assets\/(app|workspace|internal|design-019|styles)\.(js|css)/.test(html + all));
+assert(!/\/api\/(workspace|admin|launches|documents)\b/.test(all));
 // CSP : pas de script ni de gestionnaire d'événement inline.
 assert(!/<script(?![^>]*\bsrc=)[^>]*>/.test(html));
 assert(!/\son[a-z]+=/i.test(html));
-// Sécurité : jamais de stockage navigateur ni de jeton dans l'URL.
+// Sécurité : session par cookie HttpOnly uniquement.
 assert(!/\b(localStorage|sessionStorage)\s*[.[]|document\.cookie/.test(all));
-// API non connectée : aucune URL d'endpoint supposée, fonctions TODO présentes.
-assert(!/['"`]\/api\//.test(api + client));
-assert(api.includes('export const API_CONNECTED = false'));
-for (const fn of ['registerClient', 'loginClient', 'logoutClient', 'getCurrentClient', 'listOrderRequests', 'createOrderRequest', 'getOrderRequest', 'uploadDocument', 'downloadDocument'])
-  assert(new RegExp(`export function ${fn}\\(`).test(api), fn);
-assert(api.includes("'X-Framatex-Request'") && api.includes("credentials: 'same-origin'"));
-// Démo clairement isolée et identifiée.
-assert(demo.includes('À SUPPRIMER') && client.includes("from './demo-data.js'"));
-// Écrans attendus et textes métier clés.
+assert(api.includes("credentials: 'same-origin'") && api.includes('xhr.withCredentials = true'));
+assert((api.match(/'X-Framatex-Request'/g) || []).length >= 2);
+const code = (api + client).replace(/^\s*\/\/.*$/gm, ''); // hors commentaires
+assert(!/client_id/.test(code));
+// Vrais endpoints de app/client_routes.py.
+for (const ep of ["'/register'", "'/login'", "'/logout'", "'/me'", "'/order-requests'", '/documents`', '/download`'])
+  assert(api.includes(ep), ep);
+// Vrais champs backend.
+for (const f of ['raison_sociale', 'nom_contact', 'telephone', 'adresse', 'pays', 'identifiant_fiscal', 'quantite', 'date_souhaitee', 'reference_client', 'commentaire', 'request_number', 'client_code'])
+  assert(client.includes(f), f);
+// Statuts réellement supportés.
+assert(ui.includes('draft:') && ui.includes('submitted:') && !ui.includes('under_review'));
+// Écrans et messages métier.
 for (const route of ['/connexion', '/inscription', '/en-attente', '/demandes', '/demandes/nouvelle', '/demandes/:id', '/documents', '/compte'])
   assert(client.includes(`path: '${route}'`), route);
 assert(client.includes('Votre compte est en attente de validation par FRAMATEX'));
-assert(client.includes('Elle ne constitue pas encore une commande officielle FRAMATEX'));
-assert(client.includes('Vous n’avez encore aucune demande de commande.'));
+assert(client.includes('Cette demande ne constitue pas encore une commande officielle FRAMATEX / ORLI.'));
 // Données affichées échappées.
-assert(client.includes('esc(r.article)') && client.includes('esc(d.name)'));
-console.log('Espace Client UI : isolation, sécurité et écrans OK');
+assert(client.includes('esc(r.article)') && client.includes('esc(d.name)') && client.includes('esc(c.raison_sociale'));
+console.log('Espace Client UI : API réelle, isolation, sécurité et écrans OK');

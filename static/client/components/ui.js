@@ -33,7 +33,9 @@ export function esc(value) {
 const DATE_FMT = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
 export function fmtDate(value) {
   if (!value) return '—';
-  const d = new Date(value);
+  // Date seule (AAAA-MM-JJ) : interprétée en date locale pour éviter tout décalage de fuseau.
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(value);
   return Number.isNaN(d.getTime()) ? '—' : DATE_FMT.format(d);
 }
 export function fmtQty(value) {
@@ -45,14 +47,10 @@ export function fmtSize(bytes) {
   return `${Math.max(1, Math.ceil(bytes / 1024))} Ko`;
 }
 
-// Statuts de demande.
-// TODO(api) : aligner les clés sur les valeurs réellement renvoyées par le backend client.
+// Statuts de demande : valeurs de ClientOrderRequest.status (OrderPayload : draft | submitted).
 export const REQUEST_STATUS = {
-  draft: { label: 'Brouillon', tone: 'neutral', help: 'La demande n’a pas encore été envoyée à FRAMATEX.' },
-  submitted: { label: 'Envoyée', tone: 'info', help: 'FRAMATEX a reçu votre demande.' },
-  under_review: { label: 'En cours d’étude', tone: 'warn', help: 'Nos équipes étudient votre demande et pourront vous solliciter pour des documents complémentaires.' },
-  accepted: { label: 'Acceptée', tone: 'success', help: 'Votre demande a été acceptée par FRAMATEX.' },
-  rejected: { label: 'Refusée', tone: 'danger', help: 'Votre demande n’a pas pu être retenue. Contactez FRAMATEX pour en savoir plus.' },
+  draft: { label: 'Brouillon', tone: 'neutral', help: 'La demande est enregistrée mais n’a pas été soumise à FRAMATEX.' },
+  submitted: { label: 'Envoyée', tone: 'info', help: 'FRAMATEX a reçu votre demande et l’examinera avant toute commande officielle.' },
 };
 export function statusBadge(status) {
   const s = REQUEST_STATUS[status] || { label: status || 'Inconnu', tone: 'neutral' };

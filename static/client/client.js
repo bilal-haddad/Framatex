@@ -1,23 +1,20 @@
 // Espace Client FRAMATEX — interface (routeur par ancre, écrans, formulaires).
-// Toutes les données passent par `source` : l'API réelle quand elle sera connectée,
-// sinon la source de démonstration (static/client/demo-data.js).
+// Toutes les données passent par l'API client réelle (static/client/api.js → app/client_routes.py).
 
 import * as api from './api.js';
-import { DEMO_MODE, DEMO_SCENARIO, demoSource } from './demo-data.js'; // À retirer avec la démo.
 import {
   icon, esc, fmtDate, fmtQty, fmtSize, statusBadge, REQUEST_STATUS, field, passwordField,
   setFieldError, clearErrors, showFormAlert, bindPasswordToggles, setLoading, toast,
   emptyState, errorState, loadingState,
 } from './components/ui.js';
 
-const source = api.API_CONNECTED ? api : demoSource;
-const IS_DEMO = !api.API_CONNECTED && DEMO_MODE;
+const source = api;
 
-// TODO(api) : confirmer formats et taille maximale avec le backend client.
+// Formats et taille alignés sur app/client_routes.py (EXTS, MAX_UPLOAD).
 const UPLOAD = {
   maxBytes: 20 * 1024 * 1024,
-  extensions: ['.pdf', '.docx', '.xlsx', '.jpg', '.jpeg', '.png'],
-  label: 'PDF, DOCX, XLSX, JPG ou PNG',
+  extensions: ['.pdf', '.docx', '.xlsx', '.jpg', '.jpeg', '.png', '.txt'],
+  label: 'PDF, DOCX, XLSX, JPG, PNG ou TXT',
   sizeLabel: '20 Mo',
 };
 const CONTACT_EMAIL = 'contact@framatex.net';
@@ -33,7 +30,10 @@ const state = { client: null, hadSession: false, notice: '' };
 function messageFor(err, context = '') {
   switch (err?.code) {
     case 'invalid_credentials': return 'Adresse email ou mot de passe incorrect.';
-    case 'pending': return 'Votre compte est en attente de validation par FRAMATEX.';
+    case 'inactive': return 'Votre compte est en attente de validation par FRAMATEX ou a été suspendu.';
+    case 'rate_limited': return 'Trop de tentatives. Réessayez dans quelques minutes.';
+    case 'conflict': return err.detail || 'Cet élément existe déjà.';
+    case 'rejected': return err.detail || 'Ce fichier ou ces informations ont été refusés.';
     case 'unauthenticated': return 'Votre session a expiré. Veuillez vous reconnecter.';
     case 'forbidden': return 'Vous n’avez pas accès à cette ressource.';
     case 'not_found': return context === 'request' ? 'Cette demande est introuvable.' : 'Élément introuvable.';
@@ -41,7 +41,6 @@ function messageFor(err, context = '') {
     case 'unsupported_type': return `Format non accepté. Formats autorisés : ${UPLOAD.label}.`;
     case 'validation': return 'Certaines informations sont invalides. Vérifiez le formulaire.';
     case 'network': return 'Connexion au serveur impossible. Vérifiez votre connexion internet.';
-    case 'api_not_connected': return IS_DEMO ? 'Action indisponible en démonstration.' : 'Ce service n’est pas encore disponible.';
     default: return 'Une erreur est survenue. Veuillez réessayer dans quelques instants.';
   }
 }
@@ -95,7 +94,7 @@ async function render() {
       state.client = await source.getCurrentClient();
       state.hadSession = true;
     } catch (err) {
-      if (err.code === 'pending') { go('/en-attente'); return; }
+      if (err.code === 'inactive') { go('/en-attente'); return; }
       state.notice = state.hadSession ? messageFor({ code: 'unauthenticated' }) : '';
       state.hadSession = false;
       go('/connexion');
@@ -123,6 +122,7 @@ function liveClear(form) {
 
 // Gestion centralisée des erreurs d'écran protégé.
 function handleScreenError(err, container, context) {
+  if (err.code === 'inactive') { state.client = null; go('/en-attente'); return; }
   if (err.code === 'unauthenticated') {
     state.client = null;
     state.notice = messageFor(err);
@@ -176,9 +176,9 @@ const NAV = [
 function identity() {
   const c = state.client || {};
   return `<div class="identity">
-      <p class="identity-company">${esc(c.company || '')}</p>
-      ${c.contact ? `<p class="identity-contact">${esc(c.contact)}</p>` : ''}
-      ${c.code ? `<p class="identity-code">${esc(c.code)}</p>` : ''}
+      <p class="identity-company">${esc(c.raison_sociale || '')}</p>
+      ${c.nom_contact ? `<p class="identity-contact">${esc(c.nom_contact)}</p>` : ''}
+      ${c.client_code ? `<p class="identity-code">${esc(c.client_code)}</p>` : ''}
     </div>`;
 }
 
@@ -339,7 +339,7 @@ function viewLogin() {
       state.hadSession = true;
       go('/demandes');
     } catch (err) {
-      if (err.code === 'pending') { go('/en-attente'); return; }
+      if (err.code === 'inactive') { go('/en-attente'); return; }
       showFormAlert(form, messageFor(err));
       form['login-password'].value = '';
       setLoading(btn, false);
@@ -351,7 +351,9 @@ function viewLogin() {
 // C. Création de compte
 // --------------------------------------------------------------------------
 const COUNTRIES = ['France', 'Maroc', 'Belgique', 'Suisse', 'Luxembourg', 'Espagne', 'Portugal', 'Italie', 'Allemagne', 'Pays-Bas', 'Royaume-Uni', 'Tunisie', 'Autre'];
-const PASSWORD_MIN = 12; // TODO(api) : aligner sur la règle du backend client.
+const PASSWORD_MIN = 12; // RegisterPayload.password : min_length=12.
+// Champs backend → identifiants de champs du formulaire (erreurs de validation serveur).
+const REGISTER_FIELDS = { raison_sociale: 'reg-company', identifiant_fiscal: 'reg-taxid', adresse: 'reg-address', pays: 'reg-country', nom_contact: 'reg-contact', telephone: 'reg-phone', email: 'reg-email', password: 'reg-password' };
 
 function viewRegister() {
   app.innerHTML = authLayout(`
@@ -417,15 +419,15 @@ function viewRegister() {
     const btn = form.querySelector('[type="submit"]');
     setLoading(btn, true, 'Envoi en cours…');
     try {
-      // TODO(api) : renommer les clés selon les champs réellement attendus par le backend.
       await source.registerClient({
-        company: v('reg-company'), taxId: v('reg-taxid'), address: v('reg-address'), country: v('reg-country'),
-        contact: v('reg-contact'), phone: v('reg-phone'), email: v('reg-email'), password: pw,
+        raison_sociale: v('reg-company'), identifiant_fiscal: v('reg-taxid'), adresse: v('reg-address'), pays: v('reg-country'),
+        nom_contact: v('reg-contact'), telephone: v('reg-phone'), email: v('reg-email'), password: pw,
       });
       form.reset();
       go('/inscription/envoyee');
     } catch (err) {
-      if (err.fields) Object.entries(err.fields).forEach(([id, msg]) => setFieldError(form, id, msg));
+      if (err.fields) Object.entries(err.fields).forEach(([key, msg]) => REGISTER_FIELDS[key] && setFieldError(form, REGISTER_FIELDS[key], 'Valeur invalide.'));
+      if (err.code === 'conflict') setFieldError(form, 'reg-email', 'Un compte existe déjà pour cette adresse email.');
       showFormAlert(form, messageFor(err));
       setLoading(btn, false);
     }
@@ -453,8 +455,8 @@ function viewRegistered() {
   app.innerHTML = statusPanel({
     tone: 'success', ico: 'check', eyebrow: 'Demande enregistrée', title: 'Votre demande de compte a bien été enregistrée',
     paragraphs: [
-      'Votre compte doit maintenant être validé par FRAMATEX avant que vous puissiez accéder à votre espace client.',
-      'Vous recevrez ensuite l’autorisation d’utiliser le portail.',
+      'Votre compte est en attente de validation par FRAMATEX.',
+      'Il doit être validé avant que vous puissiez accéder à votre espace client. Vous pourrez ensuite vous connecter avec votre adresse email et votre mot de passe.',
     ],
     steps: [
       { label: 'Demande de compte envoyée', state: 'done' },
@@ -470,7 +472,7 @@ function viewPending() {
     tone: 'warn', ico: 'clock', eyebrow: 'Compte en attente', title: 'Votre compte est en attente de validation par FRAMATEX',
     paragraphs: [
       'Vous pourrez vous connecter dès que FRAMATEX aura validé votre compte.',
-      `Pour toute question, écrivez-nous à ${CONTACT_EMAIL}.`,
+      `Si votre compte a été suspendu, ou pour toute question, écrivez-nous à ${CONTACT_EMAIL}.`,
     ],
     steps: [
       { label: 'Demande de compte envoyée', state: 'done' },
@@ -484,13 +486,6 @@ function viewPending() {
 // --------------------------------------------------------------------------
 // F. Mes demandes
 // --------------------------------------------------------------------------
-const FILTERS = [
-  { key: 'all', label: 'Toutes', test: () => true },
-  { key: 'open', label: 'En cours', test: r => ['draft', 'submitted', 'under_review'].includes(r.status) },
-  { key: 'accepted', label: 'Acceptées', test: r => r.status === 'accepted' },
-  { key: 'rejected', label: 'Refusées', test: r => r.status === 'rejected' },
-];
-
 async function viewRequests() {
   mountShell('requests', `${pageHead({
     title: 'Mes demandes', lead: 'Vos demandes de commande transmises à FRAMATEX.',
@@ -507,30 +502,19 @@ async function viewRequests() {
     });
     return;
   }
-  let active = 'all';
-  const draw = () => {
-    const f = FILTERS.find(x => x.key === active);
-    const list = items.filter(f.test);
-    body.innerHTML = `
-      <div class="filters" role="group" aria-label="Filtrer les demandes">
-        ${FILTERS.map(x => `<button type="button" class="filter${x.key === active ? ' is-active' : ''}" data-filter="${x.key}" aria-pressed="${x.key === active}">${x.label}<span class="filter-count">${items.filter(x.test).length}</span></button>`).join('')}
-      </div>
-      ${list.length ? `<div class="table-card">
-        <div class="req-head" aria-hidden="true"><span>Demande</span><span>Réf. client</span><span>Quantité</span><span>Date souhaitée</span><span>Créée le</span><span>Statut</span><span></span></div>
-        <ul class="req-list">${list.map(r => `
-          <li><a class="req-row" href="#/demandes/${encodeURIComponent(r.id)}">
-            <span class="req-main"><span class="req-number">${esc(r.number)}</span><span class="req-article">${esc(r.article)}</span></span>
-            <span class="req-cell" data-label="Réf. client">${esc(r.clientRef || '—')}</span>
-            <span class="req-cell" data-label="Quantité">${fmtQty(r.quantity)}</span>
-            <span class="req-cell" data-label="Date souhaitée">${fmtDate(r.desiredDate)}</span>
-            <span class="req-cell" data-label="Créée le">${fmtDate(r.createdAt)}</span>
-            <span class="req-status">${statusBadge(r.status)}</span>
-            ${icon('arrow', 'ico req-chevron')}
-          </a></li>`).join('')}
-        </ul></div>` : `<p class="muted-box">Aucune demande dans cette catégorie.</p>`}`;
-    body.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => { active = b.dataset.filter; draw(); body.querySelector(`[data-filter="${active}"]`).focus(); }));
-  };
-  draw();
+  body.innerHTML = `<div class="table-card">
+      <div class="req-head" aria-hidden="true"><span>Demande</span><span>Réf. client</span><span>Quantité</span><span>Date souhaitée</span><span>Créée le</span><span>Statut</span><span></span></div>
+      <ul class="req-list">${items.map(r => `
+        <li><a class="req-row" href="#/demandes/${encodeURIComponent(r.id)}">
+          <span class="req-main"><span class="req-number">${esc(r.request_number)}</span><span class="req-article">${esc(r.article)}</span></span>
+          <span class="req-cell" data-label="Réf. client">${esc(r.reference_client || '—')}</span>
+          <span class="req-cell" data-label="Quantité">${fmtQty(r.quantite)}</span>
+          <span class="req-cell" data-label="Date souhaitée">${fmtDate(r.date_souhaitee)}</span>
+          <span class="req-cell" data-label="Créée le">${fmtDate(r.created_at)}</span>
+          <span class="req-status">${statusBadge(r.status)}</span>
+          ${icon('arrow', 'ico req-chevron')}
+        </a></li>`).join('')}
+      </ul></div>`;
 }
 
 // --------------------------------------------------------------------------
@@ -601,7 +585,7 @@ function bindUploader(root, id) {
       for (const f of files.filter(x => x.state === 'ready')) {
         f.state = 'uploading'; draw();
         try {
-          await source.uploadDocument(requestId, f.file, p => { f.progress = p; draw(); });
+          await source.uploadDocument(requestId, f.file, { title: f.file.name, onProgress: p => { f.progress = p; draw(); } });
           f.state = 'done';
         } catch (err) {
           if (err.code === 'unauthenticated') throw err;
@@ -623,7 +607,7 @@ function viewNewRequest() {
     title: 'Nouvelle demande', lead: 'Décrivez votre besoin ; vous pourrez compléter les documents ensuite.',
     back: `<a class="back-link" href="#/demandes">${icon('back')}Mes demandes</a>`,
   })}
-  <div class="notice">${icon('info')}<p>Cette étape crée une <strong>demande de commande</strong>. Elle ne constitue pas encore une commande officielle FRAMATEX.</p></div>
+  <div class="notice">${icon('info')}<p>Cette étape crée une <strong>demande de commande</strong>. Cette demande ne constitue pas encore une commande officielle FRAMATEX / ORLI.</p></div>
   <form class="form card form-card" id="request-form" novalidate>
     <div class="form-alert" role="alert" hidden></div>
     <fieldset class="form-section">
@@ -637,12 +621,12 @@ function viewNewRequest() {
       <legend>Quantité et délai</legend>
       <div class="grid-2">
         ${field({ id: 'rq-qty', label: 'Quantité souhaitée', type: 'number', required: true, attrs: 'min="1" step="1" inputmode="numeric"', help: 'En nombre de pièces.' })}
-        ${field({ id: 'rq-date', label: 'Date souhaitée', type: 'date', attrs: `min="${today}"` })}
+        ${field({ id: 'rq-date', label: 'Date souhaitée', type: 'date', required: true, attrs: `min="${today}"` })}
       </div>
     </fieldset>
     <fieldset class="form-section">
       <legend>Précisions</legend>
-      ${field({ id: 'rq-comment', label: 'Commentaire', rows: 4, attrs: 'maxlength="2000"', help: 'Coloris, tailles, contraintes particulières…' })}
+      ${field({ id: 'rq-comment', label: 'Commentaire', rows: 4, attrs: 'maxlength="4000"', help: 'Coloris, tailles, contraintes particulières…' })}
     </fieldset>
     <fieldset class="form-section">
       <legend>Documents</legend>
@@ -667,23 +651,24 @@ function viewNewRequest() {
     const errors = {};
     if (!article) errors['rq-article'] = 'Indiquez le modèle ou l’article.';
     if (!qtyRaw) errors['rq-qty'] = 'Indiquez une quantité.';
-    else if (!Number.isInteger(qty) || qty < 1) errors['rq-qty'] = 'La quantité doit être un nombre entier positif.';
-    if (date && date < today) errors['rq-date'] = 'La date souhaitée ne peut pas être dans le passé.';
+    else if (!Number.isInteger(qty) || qty < 1 || qty > 10000000) errors['rq-qty'] = 'La quantité doit être un nombre entier positif.';
+    if (!date) errors['rq-date'] = 'Indiquez la date souhaitée.';
+    else if (date < today) errors['rq-date'] = 'La date souhaitée ne peut pas être dans le passé.';
     Object.entries(errors).forEach(([id, msg]) => setFieldError(form, id, msg));
     if (Object.keys(errors).length) { form.querySelector('[aria-invalid="true"]')?.focus(); return; }
 
     const btn = form.querySelector('[type="submit"]');
     setLoading(btn, true, 'Envoi de la demande…');
     try {
-      // TODO(api) : renommer les clés selon les champs réellement attendus par le backend.
-      const created = await source.createOrderRequest({ article, clientRef: form['rq-ref'].value.trim(), quantity: qty, desiredDate: date, comment: form['rq-comment'].value.trim() });
+      const created = await source.createOrderRequest({ article, quantite: qty, date_souhaitee: date, reference_client: form['rq-ref'].value.trim(), commentaire: form['rq-comment'].value.trim(), status: 'submitted' });
       let failures = 0;
       if (uploader.pending().length) { setLoading(btn, true, 'Envoi des documents…'); failures = await uploader.uploadAll(created.id); }
       go(`/demandes/${encodeURIComponent(created.id)}`);
-      toast(failures ? `Demande ${created.number} créée. ${failures} document(s) n’ont pas pu être déposés.` : `Demande ${created.number} envoyée à FRAMATEX.`, failures ? 'warn' : 'success');
+      toast(failures ? `Demande ${created.request_number} créée. ${failures} document(s) n’ont pas pu être déposés.` : `Demande ${created.request_number} envoyée à FRAMATEX.`, failures ? 'warn' : 'success');
     } catch (err) {
       if (err.code === 'unauthenticated') { handleScreenError(err, form); return; }
-      if (err.fields) Object.entries(err.fields).forEach(([id, msg]) => setFieldError(form, id, msg));
+      const ids = { article: 'rq-article', quantite: 'rq-qty', date_souhaitee: 'rq-date', reference_client: 'rq-ref', commentaire: 'rq-comment' };
+      if (err.fields) Object.keys(err.fields).forEach(key => ids[key] && setFieldError(form, ids[key], 'Valeur invalide.'));
       showFormAlert(form, messageFor(err));
       setLoading(btn, false);
     }
@@ -693,10 +678,14 @@ function viewNewRequest() {
 // --------------------------------------------------------------------------
 // H. Détail d'une demande
 // --------------------------------------------------------------------------
-function originTag(origin) {
-  return origin === 'framatex'
-    ? '<span class="origin origin-framatex">Transmis par FRAMATEX</span>'
-    : '<span class="origin">Déposé par vous</span>';
+// Une ligne par document (titre), avec sa dernière version ; les versions précédentes restent sur le serveur.
+function documentRows(request) {
+  return (request.documents || []).filter(d => d.versions?.length).map(d => {
+    const last = d.versions[d.versions.length - 1];
+    return { id: d.id, name: d.title, file: last.original_name, version: last.number, versions: d.versions.length,
+      uploadedAt: last.created_at, size: last.size, sha256: last.sha256,
+      requestId: request.id, requestNumber: request.request_number, article: request.article };
+  });
 }
 
 function documentsTable(docs, { withRequest = false } = {}) {
@@ -707,12 +696,12 @@ function documentsTable(docs, { withRequest = false } = {}) {
       <span role="columnheader">Version</span><span role="columnheader">Déposé le</span><span role="columnheader">Taille</span><span role="columnheader"><span class="visually-hidden">Action</span></span>
     </div>
     ${docs.map(d => `<div class="doc-row" role="row">
-      <span class="doc-name" role="cell"><span class="file-ico" aria-hidden="true">${icon('file')}</span><span><span class="doc-title">${esc(d.name)}</span>${originTag(d.origin)}</span></span>
+      <span class="doc-name" role="cell"><span class="file-ico" aria-hidden="true">${icon('file')}</span><span><span class="doc-title">${esc(d.name)}</span><span class="origin">${d.versions > 1 ? `${d.versions} versions · ` : ''}<span title="Empreinte SHA-256 calculée par le serveur">SHA-256 ${esc(String(d.sha256 || '').slice(0, 10))}…</span></span></span></span>
       ${withRequest ? `<span role="cell" data-label="Demande"><a class="text-link" href="#/demandes/${encodeURIComponent(d.requestId)}">${esc(d.requestNumber)}</a><span class="doc-sub">${esc(d.article || '')}</span></span>` : ''}
       <span role="cell" data-label="Version"><span class="version">v${esc(d.version)}</span></span>
       <span role="cell" data-label="Déposé le">${fmtDate(d.uploadedAt)}</span>
       <span role="cell" data-label="Taille">${fmtSize(d.size)}</span>
-      <span role="cell" class="doc-action"><button type="button" class="btn btn-secondary btn-sm" data-download data-request="${esc(d.requestId)}" data-doc="${esc(d.id)}" data-version="${esc(d.version)}">${icon('download')}<span>Télécharger</span><span class="visually-hidden"> ${esc(d.name)}</span></button></span>
+      <span role="cell" class="doc-action"><button type="button" class="btn btn-secondary btn-sm" data-download data-request="${esc(d.requestId)}" data-doc="${esc(d.id)}" data-version="${esc(d.version)}" data-file="${esc(d.file)}">${icon('download')}<span>Télécharger</span><span class="visually-hidden"> ${esc(d.name)}</span></button></span>
     </div>`).join('')}
   </div>`;
 }
@@ -721,10 +710,10 @@ function bindDownloads(root) {
   root.querySelectorAll('[data-download]').forEach(b => b.addEventListener('click', async () => {
     setLoading(b, true, 'Préparation…');
     try {
-      await source.downloadDocument(b.dataset.request, b.dataset.doc, Number(b.dataset.version));
+      await source.downloadDocument(b.dataset.request, b.dataset.doc, Number(b.dataset.version), b.dataset.file);
     } catch (err) {
       if (err.code === 'unauthenticated') { state.client = null; state.notice = messageFor(err); go('/connexion'); return; }
-      toast(err.code === 'api_not_connected' && IS_DEMO ? 'Téléchargement indisponible en démonstration : aucun fichier réel.' : messageFor(err), 'warn');
+      toast(messageFor(err), 'warn');
     } finally { setLoading(b, false); }
   }));
 }
@@ -735,10 +724,10 @@ async function viewRequestDetail({ id }) {
   let r;
   try { r = await source.getOrderRequest(id); } catch (err) { handleScreenError(err, body, 'request'); return; }
   const s = REQUEST_STATUS[r.status];
-  const docs = r.documents.map(d => ({ ...d, requestId: r.id }));
+  const docs = documentRows(r);
   body.innerHTML = `
     <div class="page-head detail-head">
-      <p class="eyebrow">Demande ${esc(r.number)}</p>
+      <p class="eyebrow">Demande ${esc(r.request_number)}</p>
       <div class="page-head-row">
         <h1 tabindex="-1">${esc(r.article)}</h1>
         <div class="page-actions">${statusBadge(r.status)}</div>
@@ -749,14 +738,14 @@ async function viewRequestDetail({ id }) {
         <section class="card" aria-labelledby="info-title">
           <h2 class="card-title" id="info-title">Informations</h2>
           <dl class="info-grid">
-            <div><dt>Numéro de demande</dt><dd>${esc(r.number)}</dd></div>
+            <div><dt>Numéro de demande</dt><dd>${esc(r.request_number)}</dd></div>
             <div><dt>Modèle / article</dt><dd>${esc(r.article)}</dd></div>
-            <div><dt>Votre référence</dt><dd>${esc(r.clientRef || '—')}</dd></div>
-            <div><dt>Quantité</dt><dd>${fmtQty(r.quantity)} pièces</dd></div>
-            <div><dt>Date souhaitée</dt><dd>${fmtDate(r.desiredDate)}</dd></div>
-            <div><dt>Créée le</dt><dd>${fmtDate(r.createdAt)}</dd></div>
+            <div><dt>Votre référence</dt><dd>${esc(r.reference_client || '—')}</dd></div>
+            <div><dt>Quantité</dt><dd>${fmtQty(r.quantite)} pièces</dd></div>
+            <div><dt>Date souhaitée</dt><dd>${fmtDate(r.date_souhaitee)}</dd></div>
+            <div><dt>Créée le</dt><dd>${fmtDate(r.created_at)}</dd></div>
           </dl>
-          ${r.comment ? `<div class="comment"><p class="comment-label">Commentaire</p><p>${esc(r.comment)}</p></div>` : ''}
+          ${r.commentaire ? `<div class="comment"><p class="comment-label">Commentaire</p><p>${esc(r.commentaire)}</p></div>` : ''}
         </section>
 
         <section class="card" aria-labelledby="docs-title">
@@ -767,6 +756,7 @@ async function viewRequestDetail({ id }) {
           <div id="docs-zone">${docs.length ? documentsTable(docs) : '<p class="muted-box">Aucun document pour le moment.</p>'}</div>
           <form class="upload-form" id="upload-form" novalidate>
             ${uploaderHtml('detail-files', { title: 'Ajouter des documents' })}
+            <p class="field-help upload-hint">Un fichier portant le même nom qu’un document existant en crée une nouvelle version.</p>
             <div class="form-actions form-actions-tight"><button class="btn btn-primary" type="submit">${icon('upload')}Déposer les documents</button></div>
           </form>
         </section>
@@ -780,8 +770,8 @@ async function viewRequestDetail({ id }) {
         </section>
         <section class="card card-quiet" aria-labelledby="help-title">
           <h2 class="card-title" id="help-title">Une question ?</h2>
-          <p class="side-text">Indiquez le numéro <strong>${esc(r.number)}</strong> dans votre message.</p>
-          <a class="text-link" href="mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Demande ' + r.number)}">${CONTACT_EMAIL}</a>
+          <p class="side-text">Indiquez le numéro <strong>${esc(r.request_number)}</strong> dans votre message.</p>
+          <a class="text-link" href="mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Demande ' + r.request_number)}">${CONTACT_EMAIL}</a>
         </section>
       </aside>
     </div>`;
@@ -798,8 +788,9 @@ async function viewRequestDetail({ id }) {
       const failures = await uploader.uploadAll(r.id);
       const fresh = await source.getOrderRequest(r.id);
       const zone = body.querySelector('#docs-zone');
-      zone.innerHTML = documentsTable(fresh.documents.map(d => ({ ...d, requestId: fresh.id })));
-      body.querySelector('.count').textContent = fresh.documents.length;
+      const freshRows = documentRows(fresh);
+      zone.innerHTML = freshRows.length ? documentsTable(freshRows) : '<p class="muted-box">Aucun document pour le moment.</p>';
+      body.querySelector('.count').textContent = freshRows.length;
       bindDownloads(zone);
       toast(failures ? `${failures} document(s) n’ont pas pu être déposés.` : 'Documents déposés.', failures ? 'warn' : 'success');
       if (!failures) uploader.clear();
@@ -813,19 +804,15 @@ async function viewRequestDetail({ id }) {
 // --------------------------------------------------------------------------
 // I. Mes documents
 // --------------------------------------------------------------------------
+// Aucun endpoint global côté serveur : la vue est reconstruite à partir des demandes du client.
 async function loadAllDocuments() {
-  try { return await source.listDocuments(); } catch (err) {
-    if (err.code !== 'api_not_connected') throw err;
-    // Pas d'endpoint global : vue reconstruite à partir des demandes du client.
-    const requests = await source.listOrderRequests();
-    const details = await Promise.all(requests.map(r => source.getOrderRequest(r.id)));
-    return details.flatMap(r => r.documents.map(d => ({ ...d, requestId: r.id, requestNumber: r.number, article: r.article })))
-      .sort((a, b) => String(b.uploadedAt).localeCompare(String(a.uploadedAt)));
-  }
+  const requests = await source.listOrderRequests();
+  const details = await Promise.all(requests.map(r => source.getOrderRequest(r.id)));
+  return details.flatMap(documentRows).sort((a, b) => String(b.uploadedAt).localeCompare(String(a.uploadedAt)));
 }
 
 async function viewDocuments() {
-  mountShell('documents', `${pageHead({ title: 'Mes documents', lead: 'Documents déposés par vous ou transmis par FRAMATEX, toutes demandes confondues.' })}<div id="docs-body">${loadingState('Chargement des documents…')}</div>`);
+  mountShell('documents', `${pageHead({ title: 'Mes documents', lead: 'Documents déposés sur vos demandes de commande, toutes demandes confondues.' })}<div id="docs-body">${loadingState('Chargement des documents…')}</div>`);
   const body = app.querySelector('#docs-body');
   let docs;
   try { docs = await loadAllDocuments(); } catch (err) { handleScreenError(err, body); return; }
@@ -842,7 +829,7 @@ async function viewDocuments() {
   const count = body.querySelector('.toolbar-count');
   const draw = q => {
     const needle = q.trim().toLowerCase();
-    const list = needle ? docs.filter(d => `${d.name} ${d.requestNumber} ${d.article}`.toLowerCase().includes(needle)) : docs;
+    const list = needle ? docs.filter(d => `${d.name} ${d.file} ${d.requestNumber} ${d.article}`.toLowerCase().includes(needle)) : docs;
     count.textContent = `${list.length} document${list.length > 1 ? 's' : ''}`;
     tableWrap.innerHTML = list.length ? documentsTable(list, { withRequest: true }) : '<p class="muted-box">Aucun document ne correspond à votre recherche.</p>';
     bindDownloads(tableWrap);
@@ -854,7 +841,7 @@ async function viewDocuments() {
 // --------------------------------------------------------------------------
 // J. Mon compte (lecture seule : aucune modification de profil côté backend pour l'instant)
 // --------------------------------------------------------------------------
-const ACCOUNT_STATUS = { active: 'Actif', pending: 'En attente de validation', suspended: 'Suspendu' }; // TODO(api) : aligner.
+const ACCOUNT_STATUS = { active: 'Actif', pending: 'En attente de validation', suspended: 'Suspendu' }; // ClientAccount.status
 
 async function viewAccount() {
   mountShell('account', `${pageHead({ title: 'Mon compte', lead: 'Informations de votre entreprise enregistrées chez FRAMATEX.' })}<div id="account-body">${loadingState()}</div>`);
@@ -867,43 +854,31 @@ async function viewAccount() {
       <section class="card" aria-labelledby="acc-company">
         <h2 class="card-title" id="acc-company">Entreprise</h2>
         <dl class="info-list">
-          ${row('Raison sociale', c.company)}
-          ${row('Code client', c.code)}
-          ${row('ICE / identifiant fiscal', c.taxId)}
+          ${row('Raison sociale', c.raison_sociale)}
+          ${row('Code client', c.client_code)}
+          ${row('ICE / identifiant fiscal', c.identifiant_fiscal)}
           <div><dt>Statut du compte</dt><dd><span class="badge badge-${c.status === 'active' ? 'success' : c.status === 'suspended' ? 'danger' : 'warn'}"><span class="badge-dot" aria-hidden="true"></span>${esc(ACCOUNT_STATUS[c.status] || c.status || '—')}</span></dd></div>
         </dl>
       </section>
       <section class="card" aria-labelledby="acc-contact">
         <h2 class="card-title" id="acc-contact">Contact</h2>
         <dl class="info-list">
-          ${row('Nom du contact', c.contact)}
+          ${row('Nom du contact', c.nom_contact)}
           ${row('Adresse email', c.email)}
-          ${row('Téléphone', c.phone)}
+          ${row('Téléphone', c.telephone)}
+          ${row('Client depuis', c.created_at ? fmtDate(c.created_at) : '')}
         </dl>
       </section>
       <section class="card" aria-labelledby="acc-address">
         <h2 class="card-title" id="acc-address">Adresse</h2>
         <dl class="info-list">
-          ${row('Adresse', c.address)}
-          ${row('Pays', c.country)}
+          ${row('Adresse', c.adresse)}
+          ${row('Pays', c.pays)}
         </dl>
       </section>
     </div>
     <div class="notice notice-quiet">${icon('info')}<p>Pour modifier ces informations, contactez FRAMATEX à <a class="text-link" href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a>.</p></div>`;
 }
 
-// --------------------------------------------------------------------------
-// Bandeau de démonstration (supprimé automatiquement quand l'API est connectée)
-// --------------------------------------------------------------------------
-function demoBanner() {
-  if (!IS_DEMO) return;
-  const el = document.getElementById('demo-banner');
-  const scenarios = [['standard', 'Standard'], ['vide', 'Aucune demande'], ['attente', 'Compte en attente'], ['refus', 'Identifiants refusés']];
-  el.hidden = false;
-  el.innerHTML = `<p><strong>Démonstration de l’interface</strong> — données fictives, rien n’est envoyé ni enregistré.</p>
-    <p class="demo-scenarios"><span>Scénario :</span>${scenarios.map(([k, l]) => `<a href="?demo=${k}#/connexion"${DEMO_SCENARIO === k ? ' aria-current="true"' : ''}>${l}</a>`).join('')}</p>`;
-}
-
-demoBanner();
 window.addEventListener('hashchange', render);
 render();

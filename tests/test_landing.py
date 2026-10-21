@@ -41,6 +41,9 @@ def test_client_space_entry_and_landing_assets_are_served():
         assert page.status_code == 200
         _assert_security_headers(page)
         assert 'Espace Client' in page.text
+        # Portail Client (static/client/), relié à /api/client/*.
+        assert page.content == (ROOT / 'static/client/index.html').read_bytes()
+        assert client.get('/assets/client/client.js').status_code == 200
         for asset in ('landing.css', 'landing.js', 'landing-redirect.js'):
             assert client.get(f'/assets/landing/{asset}').status_code == 200
 

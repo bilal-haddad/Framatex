@@ -35,6 +35,6 @@ Les détails fonctionnels et le prompt Claude seront définis séparément avant
 ## Intégration technique (landing v1)
 
 - `index.html`, `landing.css`, `landing.js`, `landing-redirect.js` : page d’accueil servie sur `/`.
-- `client.html` : entrée provisoire de l’Espace Client, servie sur `/espace-client`.
+- L’Espace Client est servi sur `/espace-client` depuis `static/client/` (voir son README).
 - L’application interne (connexion FRAMATEX) est servie sur `/espace-framatex` ; les anciens liens QR `/#/launch/<id>` y sont redirigés.
 - Fichiers attendus par la page (noms exacts) : `logo-framatex.jpg`, `hero-textile-woman.jpg`, `partnership-meeting.jpg`. Tant qu’un fichier manque, la page affiche un repère technique en pointillés (jamais un visuel de remplacement).

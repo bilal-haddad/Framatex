@@ -8,6 +8,7 @@ import secrets
 import shutil
 import tempfile
 import zipfile
+import csv
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -18,9 +19,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
-from .core import Base, COOKIE, DATA_DIR, ROOT, engine, get_current_user, get_db, hash_password, check_password, make_token, login_limit_key, login_attempt_allowed, record_login_failure, clear_login_failures
+from .core import Base, COOKIE, DATA_DIR, ROOT, engine, get_current_user, get_db, hash_password, check_password, make_token, login_limit_key, login_attempt_allowed, record_login_failure, clear_login_failures, utcnow
 from .models import AuditEvent, Document, DocumentVersion, Folder, Launch, LaunchMember, Role, RolePermission, User
 from .completeness_models import CompletenessProfile, RequirementRule, LaunchCompleteness, RequirementValidation, RequirementException
 from .completeness import PHASES, PHASE_RANK, evaluate
@@ -43,8 +44,8 @@ STATUSES = {"À compléter", "En cours", "En validation", "Clôturé"}
 MAX_UPLOAD = 20 * 1024 * 1024
 STORAGE = DATA_DIR / "files"
 STORAGE.mkdir(parents=True, exist_ok=True)
-EXTS = {".pdf", ".docx", ".xlsx", ".png", ".jpg", ".jpeg", ".txt", ".eml"}
-MIMES = {".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".txt": "text/plain", ".eml": "message/rfc822"}
+EXTS = {".pdf", ".docx", ".xlsx", ".png", ".jpg", ".jpeg", ".txt", ".eml", ".csv"}
+MIMES = {".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".txt": "text/plain", ".eml": "message/rfc822", ".csv": "text/csv"}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -126,7 +127,9 @@ def launch_out(l: Launch):
 
 
 def version_out(v: DocumentVersion):
-    return {"id": v.id, "number": v.number, "original_name": v.original_name, "size": v.size, "sha256": v.sha256, "created_at": v.created_at.isoformat(), "uploaded_by": v.uploaded_by}
+    db = object_session(v)
+    uploader = db.get(User, v.uploaded_by) if db else None
+    return {"id": v.id, "number": v.number, "original_name": v.original_name, "size": v.size, "sha256": v.sha256, "created_at": v.created_at.isoformat(), "uploaded_by": v.uploaded_by, "uploaded_by_name": uploader.name if uploader else None}
 
 
 def doc_out(d: Document):
@@ -166,18 +169,20 @@ class UserPayload(BaseModel):
     role_ids: list[str] = Field(default_factory=list)
 
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 def landing():
+    # Page d'accueil publique.
     return FileResponse(ROOT / "static" / "landing" / "index.html")
 
-@app.get("/espace-framatex")
+@app.get("/espace-framatex", include_in_schema=False)
 def index():
-    # Application interne inchangée (connexion + dossiers jaunes).
+    # Application interne FRAMATEX (connexion + dossiers jaunes).
     return FileResponse(ROOT / "static" / "index.html")
 
-@app.get("/espace-client")
-def client_space():
-    return FileResponse(ROOT / "static" / "landing" / "client.html")
+@app.get("/espace-client", include_in_schema=False)
+def client_index():
+    # Portail Client (static/client/), relié à /api/client/*.
+    return FileResponse(ROOT / "static" / "client" / "index.html")
 
 @app.get("/api/health")
 def health():
@@ -301,6 +306,16 @@ def get_doc(db: Session, doc_id: str) -> Document:
 def verify_file(file_path: Path, extension: str):
     with file_path.open("rb") as f:
         start = f.read(12)
+    if start.startswith((b'MZ', b'\x7fELF')):
+        raise HTTPException(422, "Exécutable interdit")
+    if extension == ".csv":
+        try:
+            with file_path.open(encoding="utf-8-sig", newline="") as stream:
+                for row in csv.reader(stream, strict=True):
+                    if len(row) > 500 or any("\x00" in cell for cell in row):
+                        raise ValueError("CSV non textuel ou trop large")
+        except (UnicodeError, csv.Error, ValueError):
+            raise HTTPException(422, "CSV UTF-8 invalide")
     if extension == ".pdf" and not start.startswith(b"%PDF-"):
         raise HTTPException(422, "Ce fichier ne semble pas être un PDF")
     if extension == ".png" and not start.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -325,7 +340,7 @@ async def store_upload(file: UploadFile):
     original_name = Path((file.filename or "").replace("\\", "/")).name[:240]
     suffix = Path(original_name).suffix.lower()
     if not original_name or suffix not in EXTS:
-        raise HTTPException(422, "Format non autorisé (PDF, DOCX, XLSX, PNG, JPEG, TXT ou EML)")
+        raise HTTPException(422, "Format non autorisé (PDF, DOCX, XLSX, PNG, JPEG, TXT, EML ou CSV)")
     disk_name = secrets.token_hex(24)
     target = STORAGE / disk_name
     sha = hashlib.sha256()
@@ -350,7 +365,7 @@ async def store_upload(file: UploadFile):
 
 
 @app.post("/api/launches/{launch_id}/documents", status_code=201)
-async def upload_document(launch_id: str, folder: str = Form(...), title: str = Form(...), doc_type: str = Form("Autre"), file: UploadFile = File(...), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def upload_document(launch_id: str, folder: str = Form(...), title: str = Form(...), doc_type: str = Form("Autre"), comment: str = Form("", max_length=2000), file: UploadFile = File(...), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     must(user, "launch.read")
     if folder not in SLUGS:
         raise HTTPException(422, "Sous-dossier invalide")
@@ -367,26 +382,38 @@ async def upload_document(launch_id: str, folder: str = Form(...), title: str = 
         version = DocumentVersion(document_id=doc.id, number=1, original_name=original, disk_name=disk_name, size=size, sha256=sha, content_type=mime, uploaded_by=user.id)
         db.add(version)
         db.flush()
+        if comment.strip():
+            from .internal_routes import append_comment
+            append_comment(db, user, version, comment)
+        from .internal_uploads import duplicates
+        matches = duplicates(db, user, launch_id, folder, sha, exclude_id=doc.id)
+        launch.updated_at = utcnow()
         from .quality_routes import auto_inspect_excel
         auto_inspect_excel(db, version, user.id)
-        audit(db, user, "document.upload", "document", doc.id, {"launch": launch_id, "folder": folder, "sha256": sha})
+        audit(db, user, "document.upload", "document", doc.id, {"launch": launch_id, "folder": folder, "sha256": sha, "duplicate_count": len(matches)})
         db.commit()
-        return doc_out(doc)
+        return {**doc_out(doc), "duplicates": matches}
     except Exception:
         db.rollback()
         (STORAGE / disk_name).unlink(missing_ok=True)
         raise
 
 @app.post("/api/documents/{doc_id}/versions", status_code=201)
-async def new_version(doc_id: str, file: UploadFile = File(...), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def new_version(doc_id: str, file: UploadFile = File(...), comment: str = Form("", max_length=2000), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     d = get_doc(db, doc_id)
     must(user, "document.write", d.folder.slug)
     original, disk_name, size, sha, mime = await store_upload(file)
     try:
+        if any(v.sha256 == sha for v in d.versions):
+            raise HTTPException(409, "Ce fichier est déjà conservé dans les versions de ce document")
         next_number = max((v.number for v in d.versions), default=0) + 1
         version = DocumentVersion(document_id=d.id, number=next_number, original_name=original, disk_name=disk_name, size=size, sha256=sha, content_type=mime, uploaded_by=user.id)
         d.versions.append(version)
         db.flush()
+        if comment.strip():
+            from .internal_routes import append_comment
+            append_comment(db, user, version, comment)
+        d.folder.launch.updated_at = utcnow()
         emit_document_impacts(db, d, version)
         from .quality_routes import auto_inspect_excel
         auto_inspect_excel(db, version, user.id)
@@ -745,6 +772,13 @@ app.include_router(access_router)
 # 0.17 — Signalements pilotes anonymisés vis-à-vis des autres collaborateurs.
 from .pilot_routes import router as pilot_router
 app.include_router(pilot_router)
+
+# Espace Client : comptes, sessions et stockage séparés du dossier jaune.
+from .client_routes import router as client_router
+app.include_router(client_router)
+
+from .internal_routes import router as internal_router
+app.include_router(internal_router)
 
 # Le contrôle global de portée est effectué dans request_header_guard, avant
 # le dispatch FastAPI. Aucun routeur historique ne peut l'éviter.
