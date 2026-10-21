@@ -4,6 +4,10 @@ Branche : `final/platform-review` — base : dernier commit de Codex
 `032d029` (« feat: complete client request and document workflows »).
 Recette du 21 octobre 2026, Chromium headless, largeurs 1440, 1024, 820 et 390 px.
 
+> **Mise à jour `design/premium-ux-wow`** : checklist entièrement visible dès la
+> création, état « Doublon détecté », tableau de bord « Documents à traiter »,
+> finition premium (landing et deux espaces). Voir `docs/UX_PREMIUM_PASS.md`.
+>
 > **Mise à jour `design/final-framatex-ux`** : Dossier Jaune en checklist par
 > sous-dossier (profil « Dossier Jaune FRAMATEX standard » appliqué automatiquement),
 > tableau de bord centré sur les documents manquants, modules avancés regroupés en
@@ -94,7 +98,7 @@ fiche de prix en attente de validation ; E `…0145` fiche d'emploi V2, impact,
 | Fonction | Ce qu'elle fait | Où | Comment tester | Statut | Preuve |
 | --- | --- | --- | --- | --- | --- |
 | Connexion collaborateurs | Email + mot de passe internes (système existant, inchangé). | `/espace-framatex` | Bon / mauvais mot de passe. | Fonctionnel | QA |
-| Tableau de bord | Dans l'ordre : indicateurs → Actions prioritaires → Documents manquants (Sous-dossier, Document, Commande, Client, État, Ouvrir ; filtre par sous-dossier) → Complétude des dossiers → Alertes importantes → Activité récente. Un manquant ouvre le dossier, le sous-dossier et la ligne de checklist. | Tableau de bord | Cliquer une pièce manquante. | Fonctionnel | QA, UI-int, Nav |
+| Tableau de bord | Dans l'ordre : 9 indicateurs → Actions prioritaires → **Documents à traiter** (onglets Manquants · En validation · Doublons avec compteurs ; Sous-dossier, Document, Commande, Client, État, Action ; filtre par sous-dossier) → Complétude des dossiers → Alertes importantes → Activité récente. Un clic ouvre le dossier, le sous-dossier et la ligne. | Tableau de bord | Cliquer « Doublons » puis « Examiner ». | Fonctionnel | pytest, JS, UI-int, Nav |
 | Commandes et lancements | Liste filtrable : référence, client, modèle, complétude, statut, dates d'activité, alertes. | Commandes et lancements | Filtrer sur « Incomplet ». | Fonctionnel | UI-int, pytest |
 | Création / modification de dossier | Création avec les quatre sous-dossiers ; référence ORLI facultative. | « Nouveau dossier », « Modifier le dossier » | Créer un dossier. | Fonctionnel | QA, pytest |
 | Suivi métier | Article, quantité, références provisoire et définitive, responsable. | Fiche commande du dossier | « Modifier le suivi métier ». | Fonctionnel | pytest, UI-int |
@@ -113,7 +117,7 @@ fiche de prix en attente de validation ; E `…0145` fiche d'emploi V2, impact,
 | --- | --- | --- | --- | --- | --- |
 | En-tête | Commande, client, modèle, quantité, date souhaitée, référence client, ORLI si renseigné, état, complétude X / Y et étape. | En tête du dossier | Ouvrir le dossier B. | Fonctionnel | UI-int, Nav |
 | Quatre sous-dossiers | Technique, Réception, Dédouanement, Factures : X / Y présents, barre, manquants, à valider, à venir. | Cartes 01 à 04 | Cliquer chaque carte. | Fonctionnel | UI-int, Nav |
-| Checklist par sous-dossier | Une ligne par type : Document, État (Présent, Manquant, En validation, Non exigible, Exception), Dernière version, Date, Action (Déposer prérempli, Valider, Ouvrir). | Onglet Documents | Dossier créé depuis une demande, cas A–F. | Fonctionnel | pytest, JS, Nav (cas A–F) |
+| Checklist par sous-dossier | Les 22 lignes standard visibles dès la création. États : Présent, Manquant, En validation, Exception, Doublon détecté, Non applicable (facultatif). Dernière version, date, action (Déposer prérempli, Valider, Ouvrir, Examiner le doublon). | Onglet Documents | Dossier créé depuis une demande. | Fonctionnel | pytest, JS, Nav |
 | Repères couleur | Filet supérieur et pictogramme teintés par rubrique (jaune, rose, bleu, vert). Discrets, l'interface reste bleu nuit. | Cartes et en-têtes de rubrique | Visuel. | Fonctionnel | Nav (planche 09) |
 | Droits par rubrique | Une rubrique non autorisée n'expose ni titre, ni compteur, ni document. | Cartes « Accès restreint » | Rôle limité à Jaune. | Fonctionnel | QA, Nav |
 | Accès restreint par dossier | L'administrateur réserve un dossier à des membres nommés. | Panneau d'accès du dossier | Restreindre, ajouter puis retirer un membre. | Fonctionnel | QA, pytest |
@@ -128,7 +132,7 @@ fiche de prix en attente de validation ; E `…0145` fiche d'emploi V2, impact,
 | Refus | Exécutable, faux PDF (signature), fichier > 20 Mo, rubrique invalide, XLS ancien. | Même formulaire | Déposer un `.exe` renommé. | Fonctionnel | QA |
 | Contrôle côté navigateur | Fichier > 20 Mo refusé avant envoi ; bouton désactivé pendant le dépôt (pas de double envoi). | Formulaires de dépôt et de version | Déposer un gros fichier. | Fonctionnel | Nav |
 | SHA-256 | Empreinte calculée et conservée ; téléchargement octet pour octet identique. | Historique d'un document | Comparer avec `sha256sum`. | Fonctionnel | QA |
-| Doublons | Même contenu déjà présent dans la rubrique : signalé au dépôt. Version identique d'un même document : refusée (409). | Dépôt | Redéposer le même fichier. | Fonctionnel | QA |
+| Doublons | Même contenu (SHA-256) dans plusieurs documents du dossier, sous-dossiers lisibles uniquement : « Doublon détecté » sur la ligne, la carte et au tableau de bord ; décision motivée et auditée pour conserver, ou nouvelle version pour corriger. Version identique d'un même document : refusée (409). | Dépôt, ligne de checklist | Déposer deux fois le même email. | Fonctionnel | QA, pytest, Nav |
 | Versions V1 → V2 → V3 | Anciennes versions conservées et téléchargeables, auteur et date, validations jamais transférées. | « Historique » d'un document | Ajouter deux versions. | Fonctionnel | QA |
 | Commentaires de version | Commentaire attribué et horodaté sur une version précise. | Fiche version | Commenter la V2. | Fonctionnel | QA |
 | Revue simple | Approuver / demander une correction sur une version. | Fiche version | Approuver la fiche de prix (dossier D). | Fonctionnel | QA, pytest |
@@ -138,7 +142,7 @@ fiche de prix en attente de validation ; E `…0145` fiche d'emploi V2, impact,
 
 | Fonction | Ce qu'elle fait | Où | Comment tester | Statut | Preuve |
 | --- | --- | --- | --- | --- | --- |
-| Profil standard automatique | « Dossier Jaune FRAMATEX standard » (22 lignes) appliqué à la création depuis une demande Client et à « Nouveau Dossier Jaune », étape Préparation, jamais dupliqué ni imposé sur un profil existant. | Création du dossier | Accepter une demande Client. | Fonctionnel | pytest, Nav |
+| Profil standard automatique | « Dossier Jaune FRAMATEX standard » (22 lignes, 19 obligatoires exigibles dès la création, 3 facultatives) appliqué depuis une demande Client et « Nouveau dossier ». L'étape de la commande ne masque aucune pièce. Jamais dupliqué ni imposé sur un profil existant. | Création du dossier | Accepter une demande Client. | Fonctionnel | pytest, Nav |
 | Pièces facultatives | Règle `required = false` : jamais exigible, donc jamais manquante (migration 0008). | Checklist | Emails techniques. | Fonctionnel | pytest |
 | Profils et règles | Profils de complétude par type de dossier, règles par rubrique et étape. | Administration (API `/api/admin/completeness/*`) | Lister les profils. | Fonctionnel | pytest |
 | Contexte du dossier | Profil + étape (approvisionnement, fabrication, expédition…). | « Profil et étape » | Passer C de l'expédition à l'approvisionnement. | Fonctionnel | QA |

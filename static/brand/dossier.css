@@ -296,8 +296,10 @@
   .dash-missing-table td[data-label="Document"] { order: -1; flex-basis: 100%; }
   .dash-missing-table td[data-label="Client"]::before { content: "Client · "; color: var(--fx-muted); }
   .dash-missing-table td.dj-action { margin-left: auto; }
-  .dash-missing-table tr.is-missing td:first-child { box-shadow: none; }
+  .dash-missing-table tr td:first-child { box-shadow: none; }
   .dash-missing-table tr.is-missing { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--fx-warn) 55%, var(--fx-white)); }
+  .dash-missing-table tr.is-duplicate { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--fx-danger) 60%, var(--fx-white)); }
+  .dash-missing-table tr.is-pending { box-shadow: inset 3px 0 0 var(--fx-info); }
   .dj-c-doc { width: 33%; } .dj-c-state { width: 17%; } .dj-c-ver { width: 10%; } .dj-c-date { width: 14%; } .dj-c-act { width: 26%; }
 }
 @media (max-width: 480px) {

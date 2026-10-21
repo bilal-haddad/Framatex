@@ -4,6 +4,12 @@ Branche : `design/final-framatex-ux` — base : `fix/windows-runtime-final` (`26
 Aucune fusion dans `main`. Aucun logo généré : seul `static/landing/logo-framatex.jpg`
 est utilisé, en petite taille, dans les trois espaces.
 
+> **Mise à jour `design/premium-ux-wow`** — toute la checklist est visible et
+> exigible dès la création du Dossier Jaune (plus de pièce « en attente d'une
+> étape ») ; nouvel état **Doublon détecté** ; tableau de bord « Documents à
+> traiter » (manquants, en validation, doublons) ; finition premium de la landing
+> et des deux espaces. Détails : `docs/UX_PREMIUM_PASS.md`.
+
 L'objectif : qu'un collaborateur FRAMATEX passe 80 % de son temps sur une
 seule question — *quelles pièces manquent dans ce Dossier Jaune, et où les déposer ?* —
 et n'ouvre les contrôles avancés que lorsqu'il en a besoin.
@@ -39,43 +45,48 @@ s'ouvre depuis « Ouvrir » ou « Examiner »).
 | État | Sens | Action proposée |
 | --- | --- | --- |
 | Présent | Pièce déposée (et validée si la règle l'exige) | Ouvrir |
-| Manquant | Exigible à l'étape courante et absente | Déposer (modale préremplie) |
+| Manquant | Pièce obligatoire absente (dès la création du dossier) | Déposer (modale préremplie) |
 | En validation | Déposée, validation requise | Valider · Examiner |
-| Non exigible | Exigible à une étape ultérieure, ou pièce facultative | Déposer (lien discret) |
 | Exception | Dérogation motivée (motif affiché) | — |
+| Doublon détecté | Même contenu (SHA-256) qu’une autre pièce du dossier, non examiné | Examiner le doublon |
+| Non applicable | Pièce facultative non déposée (ou règle d'un autre profil non exigée) | Déposer (lien discret) |
 
-« Non exigible » et « Exception » ne sont jamais comptés comme manquants.
+« Non applicable », « Exception » et « Doublon détecté » ne sont jamais comptés
+comme manquants ; un doublon reste compté présent.
 Les autres pièces du sous-dossier (types hors checklist) restent listées sous la
 checklist, sans être perdues.
 
 ### Checklists exactes (profil « Dossier Jaune FRAMATEX standard »)
 
-| Sous-dossier | Ligne | Type documentaire | Exigible dès | Particularité |
+| Sous-dossier | Ligne | Type documentaire | Exigible | Particularité |
 | --- | --- | --- | --- | --- |
-| Technique | Dossier technique client | Dossier technique client | Préparation | |
-| Technique | Commande client | Commande client | Préparation | |
-| Technique | Lancement provisoire | Lancement provisoire | Préparation | |
-| Technique | Lancement définitif | Lancement définitif | Fabrication | |
-| Technique | Fiche d'emploi | Fiche d'emploi | Préparation | validation requise |
-| Technique | Calcul du besoin | Calcul du besoin | Préparation | |
-| Technique | Fiche de prix | Fiche de prix | Préparation | validation requise |
-| Technique | Étude BE / Excel | Excel BE | Approvisionnement | |
-| Technique | Test tissu | Tests tissu | Fabrication | |
+| Technique | Dossier technique client | Dossier technique client | dès la création | |
+| Technique | Commande client | Commande client | dès la création | |
+| Technique | Lancement provisoire | Lancement provisoire | dès la création | |
+| Technique | Lancement définitif | Lancement définitif | dès la création | |
+| Technique | Fiche d'emploi | Fiche d'emploi | dès la création | validation requise |
+| Technique | Calcul du besoin | Calcul du besoin | dès la création | |
+| Technique | Fiche de prix | Fiche de prix | dès la création | validation requise |
+| Technique | Étude BE / Excel | Excel BE | dès la création | |
+| Technique | Test tissu | Tests tissu | dès la création | |
 | Technique | Emails techniques | Email | — | facultatif |
-| Réception | Bon de livraison | Bon de livraison | Approvisionnement | |
-| Réception | Bon / note de réception | Bon de réception | Approvisionnement | |
-| Réception | Document de réception matière | Document réception | Approvisionnement | |
+| Réception | Bon de livraison | Bon de livraison | dès la création | |
+| Réception | Bon / note de réception | Bon de réception | dès la création | |
+| Réception | Document de réception matière | Document réception | dès la création | validation requise |
 | Réception | Emails réception / logistique | Email | — | facultatif |
-| Dédouanement | Déclaration douanière | Pièce douanière | Approvisionnement | |
-| Dédouanement | Documents import / export | Justificatif import/export | Expédition | |
-| Dédouanement | Document transit | Document transit | Expédition | |
-| Dédouanement | Document transport | Document transport | Expédition | |
-| Dédouanement | Justificatif de dédouanement | Justificatif de dédouanement | Expédition | |
-| Factures | Facture FRAMATEX | Facture | Expédition | |
-| Factures | Pièce de facturation associée | Document facturation | Clôture | |
+| Dédouanement | Déclaration douanière | Pièce douanière | dès la création | |
+| Dédouanement | Documents import / export | Justificatif import/export | dès la création | |
+| Dédouanement | Document transit | Document transit | dès la création | |
+| Dédouanement | Document transport | Document transport | dès la création | |
+| Dédouanement | Justificatif de dédouanement | Justificatif de dédouanement | dès la création | |
+| Factures | Facture FRAMATEX | Facture | dès la création | |
+| Factures | Pièce de facturation associée | Document facturation | dès la création | |
 | Factures | Avoir / correction de facture | Avoir / correction de facture | — | facultatif |
 
-Étapes : Préparation → Approvisionnement → Fabrication → Expédition → Clôture.
+Étapes de la commande (suivi, sans effet sur la checklist standard) : Préparation →
+Approvisionnement → Fabrication → Expédition → Clôture. Migration
+`0009_visible_checklist_duplicates` : règles obligatoires du profil standard
+exigibles dès la création, validation requise pour la réception matière.
 
 Le moteur de complétude existant est réutilisé tel quel ; la seule extension est une
 colonne `required` (migration `0008_optional_rules`) : une règle facultative n'est
@@ -123,11 +134,12 @@ Les libellés « Version 0.x » sont retirés. Les précautions d'usage des modu
 ## 2. Tableau de bord
 
 Ordre : indicateurs (Dossiers : actifs, complets, incomplets · À traiter :
-documents manquants, à valider, alertes, incohérences, modifications) → Actions
-prioritaires → **Documents manquants** → Complétude des dossiers → Alertes
-importantes → Activité récente.
+documents manquants, à valider, doublons, alertes, incohérences, modifications) →
+Actions prioritaires → **Documents à traiter** (onglets Manquants · En validation ·
+Doublons, avec compteurs) → Complétude des dossiers → Alertes importantes →
+Activité récente.
 
-Documents manquants : Sous-dossier · Document · Commande / dossier · Client · État ·
+Documents à traiter : Sous-dossier · Document · Commande / dossier · Client · État ·
 Ouvrir, filtres par sous-dossier, 8 lignes puis « Afficher les N autres ». Un clic
 ouvre le dossier, le bon sous-dossier, et met en évidence la ligne de checklist
 (focus clavier sur son bouton « Déposer »). Exemple vérifié dans Chromium :
@@ -160,7 +172,7 @@ contenu est visible sans JavaScript (les valeurs réelles sont dans le HTML).
 Un seul jeu de jetons (`static/brand/tokens.css`) pour les trois espaces : bleu nuit
 `#0e2a5a`, bleu profond `#0a1f44`, bleu FRAMATEX `#1d4f91`, cyan `#29a8df`, blanc,
 surface `#f6f8fb`, filets `#e1e6ed`. Polices locales (Manrope, DM Sans) compatibles
-avec la CSP. Les états (Présent, Manquant, En validation, Non exigible, Exception)
+avec la CSP. Les états (Présent, Manquant, En validation, Exception, Doublon détecté, Non applicable)
 ont une forme unique : pastille avec point, filet gauche pour Manquant et En validation.
 
 Feuilles ajoutées : `static/brand/dossier.css` (Dossier Jaune, tableau de bord,
@@ -237,3 +249,5 @@ mouvement réduit, aucune donnée réelle ni mot de passe à l'écran :
 | Client → demande | `10-client-nouvelle-demande`, `10b-client-demande-detail` |
 | FRAMATEX → acceptation | `11-framatex-acceptation` |
 | Dossier créé depuis la demande (page entière) | `12-dossier-cree-depuis-demande` |
+| Documents en doublon (tableau de bord) | `09b-documents-doublons` |
+| Doublon détecté (modale) | `13-doublon-detecte` |

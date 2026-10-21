@@ -10,5 +10,4 @@ mount = function(html, label) {
   fxLastScreen = screen;
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   app.querySelector('.content')?.classList.add('fx-enter');
-  app.querySelector('.app-shell')?.classList.add('fx-enter');
 };

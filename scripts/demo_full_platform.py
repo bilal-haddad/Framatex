@@ -196,11 +196,12 @@ def full_journey(qa, browser, base, admin_password, captures):
                 adm.wait_for_selector(f'.dj-folder.selected[data-folder="{slug}"]')
                 total += adm.locator('.dj-checklist:not(.dj-other-table) .dj-row').count()
             assert total == 22, total
-            assert not adm.locator('text=Exigible dès').count()
+            stage_words = adm.locator('.dj').inner_text()
+            assert 'Exigible dès' not in stage_words, 'mention d’étape encore affichée'
             adm.click('.dj-folder[data-folder="jaune"]')
             # C. Calcul du besoin absent → Manquant ; D. Test tissu absent → Manquant dès la création.
-            assert state_of('Calcul du besoin') == 'Manquant'
-            assert state_of('Test tissu') == 'Manquant'
+            assert state_of('Calcul du besoin') == 'Manquant', state_of('Calcul du besoin')
+            assert state_of('Test tissu') == 'Manquant', state_of('Test tissu')
             # L'étape de la commande reste un suivi modifiable dans l'interface.
             adm.click('#dj-edit-phase')
             adm.select_option('#c-phase', 'approvisionnement')
