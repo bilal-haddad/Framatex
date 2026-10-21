@@ -92,6 +92,8 @@ python -m app.seed_quality_demo
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
+**Démarrage simplifié sous Windows** : depuis le dossier du dépôt, `scripts\start_windows.cmd` vérifie Python, le proxy, le port, la base et les migrations, arrête un ancien serveur FRAMATEX resté sur le port, démarre Uvicorn, contrôle les pages puis ouvre le navigateur. Voir [`docs/WINDOWS_LOCAL.md`](docs/WINDOWS_LOCAL.md). Évitez `--reload` sous Windows en dehors du développement : il peut démarrer « avec succès » sur un port déjà occupé.
+
 Si l'activation PowerShell échoue, utilisez directement `.venv\Scripts\python.exe` à la place de `python` pour les commandes suivantes. Le programme demande un mot de passe de 12 caractères minimum pour le premier administrateur : **aucun mot de passe par défaut n'est fourni**.
 
 Ouvrez **http://127.0.0.1:8000** : la page d’accueil publique propose deux entrées. La connexion à l’espace interne FRAMATEX est servie sur **http://127.0.0.1:8000/espace-framatex** (l’entrée provisoire de l’espace Client sur `/espace-client`). L'API documentée est disponible sur **http://127.0.0.1:8000/docs**.

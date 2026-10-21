@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import mimetypes
 import os
 import re
 import secrets
@@ -54,6 +55,25 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="Framatex · Dossier jaune", version="0.17.0", lifespan=lifespan)
+
+# Sous Windows, mimetypes lit le registre, qui déclare souvent .js (parfois .css)
+# en text/plain. Avec X-Content-Type-Options: nosniff, le navigateur refuserait
+# alors d'exécuter les scripts et d'appliquer les styles. Les types des fichiers
+# servis par /assets sont donc fixés explicitement, quel que soit le poste.
+WEB_MIME_TYPES = {
+    ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
+    ".json": "application/json", ".svg": "image/svg+xml", ".webp": "image/webp",
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".woff2": "font/woff2", ".woff": "font/woff", ".txt": "text/plain",
+}
+
+
+def register_web_mime_types() -> None:
+    for extension, media_type in WEB_MIME_TYPES.items():
+        mimetypes.add_type(media_type, extension)  # initialise mimetypes (registre compris) puis remplace
+
+
+register_web_mime_types()
 app.mount("/assets", StaticFiles(directory=ROOT / "static"), name="assets")
 
 # Pages HTML servies hors /api : landing publique, espace FRAMATEX (application
