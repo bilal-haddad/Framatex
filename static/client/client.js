@@ -3,7 +3,7 @@
 
 import * as api from './api.js';
 import {
-  icon, esc, fmtDate, fmtQty, fmtSize, statusBadge, REQUEST_STATUS, field, passwordField,
+  icon, esc, fmtDate, fmtQty, fmtSize, statusBadge, REQUEST_STATUS, DOCUMENT_STATUS, documentStatusBadge, field, passwordField,
   setFieldError, clearErrors, showFormAlert, bindPasswordToggles, setLoading, toast,
   emptyState, errorState, loadingState,
 } from './components/ui.js';
@@ -31,6 +31,8 @@ function messageFor(err, context = '') {
   switch (err?.code) {
     case 'invalid_credentials': return 'Adresse email ou mot de passe incorrect.';
     case 'inactive': return 'Votre compte est en attente de validation par FRAMATEX ou a été suspendu.';
+    case 'pending': return 'Votre compte est en attente de validation par FRAMATEX.';
+    case 'suspended': return 'Votre compte a été suspendu. Contactez FRAMATEX.';
     case 'rate_limited': return 'Trop de tentatives. Réessayez dans quelques minutes.';
     case 'conflict': return err.detail || 'Cet élément existe déjà.';
     case 'rejected': return err.detail || 'Ce fichier ou ces informations ont été refusés.';
@@ -54,10 +56,14 @@ const ROUTES = [
   { path: '/inscription', view: viewRegister, title: 'Créer un compte client' },
   { path: '/inscription/envoyee', view: viewRegistered, title: 'Demande de compte enregistrée' },
   { path: '/en-attente', view: viewPending, title: 'Compte en attente de validation' },
+  { path: '/suspendu', view: viewSuspended, title: 'Compte suspendu' },
   { path: '/demandes', view: viewRequests, title: 'Mes demandes', auth: true, nav: 'requests' },
   { path: '/demandes/nouvelle', view: viewNewRequest, title: 'Nouvelle demande', auth: true, nav: 'new' },
   { path: '/demandes/:id', view: viewRequestDetail, title: 'Détail de la demande', auth: true, nav: 'requests' },
   { path: '/documents', view: viewDocuments, title: 'Mes documents', auth: true, nav: 'documents' },
+  { path: '/documents-demandes', view: viewDocumentRequests, title: 'Documents demandés par FRAMATEX', auth: true, nav: 'requested' },
+  { path: '/documents-demandes/:id', view: viewDocumentRequest, title: 'Pièce demandée par FRAMATEX', auth: true, nav: 'requested' },
+  { path: '/documents-transmis', view: viewSharedDocuments, title: 'Documents transmis par FRAMATEX', auth: true, nav: 'shared' },
   { path: '/compte', view: viewAccount, title: 'Mon compte', auth: true, nav: 'account' },
 ];
 
@@ -94,7 +100,7 @@ async function render() {
       state.client = await source.getCurrentClient();
       state.hadSession = true;
     } catch (err) {
-      if (err.code === 'inactive') { go('/en-attente'); return; }
+      if (['inactive', 'pending', 'suspended'].includes(err.code)) { go(err.code === 'suspended' ? '/suspendu' : '/en-attente'); return; }
       state.notice = state.hadSession ? messageFor({ code: 'unauthenticated' }) : '';
       state.hadSession = false;
       go('/connexion');
@@ -122,7 +128,7 @@ function liveClear(form) {
 
 // Gestion centralisée des erreurs d'écran protégé.
 function handleScreenError(err, container, context) {
-  if (err.code === 'inactive') { state.client = null; go('/en-attente'); return; }
+  if (['inactive', 'pending', 'suspended'].includes(err.code)) { state.client = null; go(err.code === 'suspended' ? '/suspendu' : '/en-attente'); return; }
   if (err.code === 'unauthenticated') {
     state.client = null;
     state.notice = messageFor(err);
@@ -169,6 +175,8 @@ function authLayout(content, { wide = false } = {}) {
 const NAV = [
   { key: 'requests', href: '#/demandes', label: 'Mes demandes', icon: 'layers' },
   { key: 'new', href: '#/demandes/nouvelle', label: 'Nouvelle demande', icon: 'plus' },
+  { key: 'requested', href: '#/documents-demandes', label: 'Documents demandés par FRAMATEX', icon: 'upload' },
+  { key: 'shared', href: '#/documents-transmis', label: 'Documents transmis par FRAMATEX', icon: 'download' },
   { key: 'documents', href: '#/documents', label: 'Mes documents', icon: 'folder' },
   { key: 'account', href: '#/compte', label: 'Mon compte', icon: 'users' },
 ];
@@ -339,7 +347,7 @@ function viewLogin() {
       state.hadSession = true;
       go('/demandes');
     } catch (err) {
-      if (err.code === 'inactive') { go('/en-attente'); return; }
+      if (['inactive', 'pending', 'suspended'].includes(err.code)) { go(err.code === 'suspended' ? '/suspendu' : '/en-attente'); return; }
       showFormAlert(form, messageFor(err));
       form['login-password'].value = '';
       setLoading(btn, false);
@@ -472,7 +480,7 @@ function viewPending() {
     tone: 'warn', ico: 'clock', eyebrow: 'Compte en attente', title: 'Votre compte est en attente de validation par FRAMATEX',
     paragraphs: [
       'Vous pourrez vous connecter dès que FRAMATEX aura validé votre compte.',
-      `Si votre compte a été suspendu, ou pour toute question, écrivez-nous à ${CONTACT_EMAIL}.`,
+      `Pour toute question, écrivez-nous à ${CONTACT_EMAIL}.`,
     ],
     steps: [
       { label: 'Demande de compte envoyée', state: 'done' },
@@ -480,6 +488,15 @@ function viewPending() {
       { label: 'Accès à l’Espace Client', state: 'todo' },
     ],
     actions: `<a class="btn btn-secondary" href="#/connexion">${icon('back')}Retour à la connexion</a><a class="btn btn-ghost" href="mailto:${CONTACT_EMAIL}">Contacter FRAMATEX</a>`,
+  });
+}
+
+function viewSuspended() {
+  app.innerHTML = statusPanel({
+    tone: 'warn', ico: 'lock', eyebrow: 'Compte suspendu',
+    title: 'Votre compte a été suspendu. Contactez FRAMATEX.',
+    paragraphs: [`Votre accès est suspendu. Votre interlocuteur FRAMATEX peut vous renseigner à ${CONTACT_EMAIL}.`],
+    steps: [], actions: `<a class="btn btn-secondary" href="#/connexion">Retour à la connexion</a><a class="btn btn-ghost" href="mailto:${CONTACT_EMAIL}">Contacter FRAMATEX</a>`,
   });
 }
 
@@ -563,7 +580,8 @@ function bindUploader(root, id) {
 
   const add = fileList => {
     const rejected = [];
-    for (const file of fileList) {
+    if (!input.multiple) files = [];
+    for (const file of input.multiple ? fileList : Array.from(fileList).slice(0, 1)) {
       const err = validateFile(file);
       if (err) rejected.push(`${file.name} : ${err}`);
       else files.push({ file, state: 'ready', progress: 0 });
@@ -580,15 +598,16 @@ function bindUploader(root, id) {
   return {
     pending: () => files.filter(f => f.state === 'ready'),
     clear: () => { files = []; status.textContent = ''; draw(); },
-    async uploadAll(requestId) {
+    async uploadAll(requestId, { requestedDocument = false } = {}) {
       let failures = 0;
       for (const f of files.filter(x => x.state === 'ready')) {
         f.state = 'uploading'; draw();
         try {
-          await source.uploadDocument(requestId, f.file, { title: f.file.name, onProgress: p => { f.progress = p; draw(); } });
+          const upload = requestedDocument ? source.uploadRequestedDocument : source.uploadDocument;
+          await upload(requestId, f.file, { title: f.file.name, onProgress: p => { f.progress = p; draw(); } });
           f.state = 'done';
         } catch (err) {
-          if (err.code === 'unauthenticated') throw err;
+          if (['unauthenticated', 'pending', 'suspended'].includes(err.code)) throw err;
           f.state = 'error'; f.error = messageFor(err); failures++;
         }
         draw();
@@ -634,6 +653,7 @@ function viewNewRequest() {
     </fieldset>
     <div class="form-actions">
       <a class="btn btn-secondary" href="#/demandes">Annuler</a>
+      <button class="btn btn-secondary" type="submit" data-status="draft">Enregistrer en brouillon</button>
       <button class="btn btn-primary" type="submit">Envoyer la demande</button>
     </div>
   </form>`);
@@ -657,14 +677,15 @@ function viewNewRequest() {
     Object.entries(errors).forEach(([id, msg]) => setFieldError(form, id, msg));
     if (Object.keys(errors).length) { form.querySelector('[aria-invalid="true"]')?.focus(); return; }
 
-    const btn = form.querySelector('[type="submit"]');
+    const btn = e.submitter || form.querySelector('[type="submit"]');
     setLoading(btn, true, 'Envoi de la demande…');
     try {
-      const created = await source.createOrderRequest({ article, quantite: qty, date_souhaitee: date, reference_client: form['rq-ref'].value.trim(), commentaire: form['rq-comment'].value.trim(), status: 'submitted' });
+      const status = e.submitter?.dataset.status === 'draft' ? 'draft' : 'submitted';
+      const created = await source.createOrderRequest({ article, quantite: qty, date_souhaitee: date, reference_client: form['rq-ref'].value.trim(), commentaire: form['rq-comment'].value.trim(), status });
       let failures = 0;
       if (uploader.pending().length) { setLoading(btn, true, 'Envoi des documents…'); failures = await uploader.uploadAll(created.id); }
       go(`/demandes/${encodeURIComponent(created.id)}`);
-      toast(failures ? `Demande ${created.request_number} créée. ${failures} document(s) n’ont pas pu être déposés.` : `Demande ${created.request_number} envoyée à FRAMATEX.`, failures ? 'warn' : 'success');
+      toast(failures ? `Demande ${created.request_number} créée. ${failures} document(s) n’ont pas pu être déposés.` : status === 'draft' ? `Brouillon ${created.request_number} enregistré.` : `Demande ${created.request_number} envoyée à FRAMATEX.`, failures ? 'warn' : 'success');
     } catch (err) {
       if (err.code === 'unauthenticated') { handleScreenError(err, form); return; }
       const ids = { article: 'rq-article', quantite: 'rq-qty', date_souhaitee: 'rq-date', reference_client: 'rq-ref', commentaire: 'rq-comment' };
@@ -767,6 +788,8 @@ async function viewRequestDetail({ id }) {
           <h2 class="card-title" id="status-title">Statut</h2>
           <p class="side-status">${statusBadge(r.status)}</p>
           <p class="side-text">${esc(s?.help || '')}</p>
+          ${r.status === 'draft' ? '<button class="btn btn-primary btn-sm" id="submit-draft" type="button">Envoyer le brouillon</button>' : ''}
+          <p><a class="text-link" href="#/documents-demandes">Documents demandés par FRAMATEX</a></p>
         </section>
         <section class="card card-quiet" aria-labelledby="help-title">
           <h2 class="card-title" id="help-title">Une question ?</h2>
@@ -776,6 +799,10 @@ async function viewRequestDetail({ id }) {
       </aside>
     </div>`;
   bindDownloads(body);
+  body.querySelector('#submit-draft')?.addEventListener('click', async () => {
+    try { await source.submitOrderRequest(r.id); go(`/demandes/${encodeURIComponent(r.id)}`); }
+    catch (err) { toast(messageFor(err), 'warn'); }
+  });
 
   const form = body.querySelector('#upload-form');
   const uploader = bindUploader(form, 'detail-files');
@@ -839,6 +866,72 @@ async function viewDocuments() {
 }
 
 // --------------------------------------------------------------------------
+// Pièces attendues et transmissions explicites de FRAMATEX (composants existants).
+async function viewDocumentRequests() {
+  mountShell('requested', `${pageHead({ title: 'Documents demandés par FRAMATEX', lead: 'Les pièces attendues, leurs versions et les retours de FRAMATEX.' })}<div id="requested-body">${loadingState()}</div>`);
+  const body = app.querySelector('#requested-body');
+  try {
+    const items = await source.listDocumentRequests();
+    body.innerHTML = items.length ? items.map(item => `<section class="card">
+      <div class="card-head"><h2 class="card-title"><a class="text-link" href="#/documents-demandes/${encodeURIComponent(item.id)}">${esc(item.title)}</a></h2>${documentStatusBadge(item.status)}</div>
+      <p>${esc(item.description)}</p><p class="side-text">${esc(item.request_number)} · Demandé par ${esc(item.requested_by)} le ${fmtDate(item.requested_at)}</p>
+      <a class="btn btn-secondary btn-sm" href="#/documents-demandes/${encodeURIComponent(item.id)}">${icon('file')}${item.status === 'requested' ? 'À déposer' : item.status === 'correction_required' ? 'Déposer une correction' : 'Consulter'}</a>
+    </section>`).join('') : emptyState({ title: 'Aucun document demandé.', text: 'Les demandes de pièces de FRAMATEX apparaîtront ici.' });
+  } catch (err) { handleScreenError(err, body); }
+}
+
+async function viewDocumentRequest({ id }) {
+  mountShell('requested', `${pageHead({ title: 'Pièce demandée par FRAMATEX', back: '<a class="back-link" href="#/documents-demandes">Retour aux documents demandés</a>' })}<div id="requested-detail">${loadingState()}</div>`);
+  const body = app.querySelector('#requested-detail');
+  try {
+    const item = await source.getDocumentRequest(id);
+    const editable = ['requested', 'correction_required'].includes(item.status);
+    const versions = item.document?.versions || [];
+    body.innerHTML = `<section class="card"><div class="card-head"><h2 class="card-title">${esc(item.title)}</h2>${documentStatusBadge(item.status)}</div>
+      <p>${esc(item.description)}</p><p class="side-text">${esc(item.request_number)} · ${esc(item.requested_by)} · ${fmtDate(item.requested_at)}</p>
+      ${item.accepted_at ? `<p class="side-text">Accepté le ${fmtDate(item.accepted_at)}</p>` : ''}
+      <h3>Versions déposées</h3>${versions.length ? `<ul class="file-list">${[...versions].reverse().map(v => `<li class="file-item"><span class="file-ico">${icon('file')}</span><span class="file-body"><span class="file-name">${esc(v.original_name)} · V${v.number}</span><span class="file-meta" title="SHA-256 ${esc(v.sha256)}">${fmtDate(v.created_at)} · ${fmtSize(v.size)} · SHA-256 ${esc(v.sha256.slice(0, 16))}…</span></span><button type="button" class="btn btn-secondary btn-sm" data-requested-download="${v.number}" data-file="${esc(v.original_name)}">${icon('download')}Télécharger</button></li>`).join('')}</ul>` : '<p class="muted-box">À déposer : aucune version reçue.</p>'}
+      ${editable ? `<form class="upload-form" id="requested-upload-form">${uploaderHtml('requested-file', { multiple: false, title: item.status === 'correction_required' ? 'Déposer une nouvelle version corrigée' : 'Déposer le document demandé' })}<div class="form-actions"><button class="btn btn-primary" type="submit">${icon('upload')}Déposer</button></div></form>` : ''}
+      </section><section class="card"><h2 class="card-title">Historique de cette pièce</h2>${item.history.map(event => `<div class="comment"><p class="comment-label">${esc(DOCUMENT_STATUS[event.status]?.label || event.status)}${event.version ? ' · V' + event.version : ''} · ${esc(event.actor)} · ${fmtDate(event.occurred_at)}</p>${event.message ? `<p>${esc(event.message)}</p>` : ''}</div>`).join('')}</section>`;
+    body.querySelectorAll('[data-requested-download]').forEach(button => button.addEventListener('click', async () => {
+      try { await source.downloadRequestedDocument(item.id, Number(button.dataset.requestedDownload), button.dataset.file); }
+      catch (err) { toast(messageFor(err), 'warn'); }
+    }));
+    const form = body.querySelector('#requested-upload-form');
+    if (form) {
+      const uploader = bindUploader(form, 'requested-file');
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!uploader.pending().length) { form.querySelector('#requested-file-status').textContent = 'Choisissez un fichier à déposer.'; return; }
+        const button = form.querySelector('[type=submit]'); setLoading(button, true, 'Envoi…');
+        try {
+          const failures = await uploader.uploadAll(item.id, { requestedDocument: true });
+          if (!failures) { toast('Document déposé. FRAMATEX peut le vérifier.', 'success'); go(`/documents-demandes/${encodeURIComponent(item.id)}`); }
+        } catch (err) { handleScreenError(err, body); }
+        finally { setLoading(button, false); }
+      });
+    }
+  } catch (err) { handleScreenError(err, body); }
+}
+
+async function viewSharedDocuments() {
+  mountShell('shared', `${pageHead({ title: 'Documents transmis par FRAMATEX', lead: 'Les versions que FRAMATEX a explicitement partagées avec votre entreprise.' })}<div id="shared-body">${loadingState()}</div>`);
+  const body = app.querySelector('#shared-body');
+  try {
+    const items = await source.listSharedDocuments();
+    body.innerHTML = items.length ? items.map(item => `<section class="card"><div class="card-head"><h2 class="card-title">${esc(item.title)}</h2><span class="version">V${item.version}</span></div>
+      <p class="side-text">${esc(item.original_name)} · ${fmtSize(item.size)} · Transmis le ${fmtDate(item.published_at)}</p>
+      <p class="origin" title="SHA-256 ${esc(item.sha256)}">SHA-256 ${esc(item.sha256.slice(0, 16))}…</p>
+      <button type="button" class="btn btn-secondary btn-sm" data-shared-download="${esc(item.id)}" data-file="${esc(item.original_name)}">${icon('download')}Télécharger</button></section>`).join('') : emptyState({ title: 'Aucun document transmis.', text: 'Seuls les documents explicitement partagés par FRAMATEX sont visibles ici.' });
+    body.querySelectorAll('[data-shared-download]').forEach(button => button.addEventListener('click', async () => {
+      setLoading(button, true, 'Préparation…');
+      try { await source.downloadSharedDocument(button.dataset.sharedDownload, button.dataset.file); }
+      catch (err) { toast(messageFor(err), 'warn'); }
+      finally { setLoading(button, false); }
+    }));
+  } catch (err) { handleScreenError(err, body); }
+}
+
 // J. Mon compte (lecture seule : aucune modification de profil côté backend pour l'instant)
 // --------------------------------------------------------------------------
 const ACCOUNT_STATUS = { active: 'Actif', pending: 'En attente de validation', suspended: 'Suspendu' }; // ClientAccount.status

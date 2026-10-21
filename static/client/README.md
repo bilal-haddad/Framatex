@@ -25,6 +25,18 @@ reliée au backend Client (`app/client_routes.py`, endpoints `/api/client/*`).
 
 « Mes documents » n'a pas d'endpoint dédié : la vue est reconstruite à partir des demandes.
 
+## Workflows métier
+
+Les demandes affichent aussi `under_review`, `accepted` et `rejected`, décidés
+uniquement par FRAMATEX. Le client peut enregistrer un brouillon ou l'envoyer.
+Les rubriques « Documents demandés par FRAMATEX » et « Documents transmis par
+FRAMATEX » utilisent `/api/client/document-requests` et
+`/api/client/shared-documents`. Le dépôt d'une correction conserve les anciennes
+versions et le partage reste lié à une version explicitement autorisée.
+Les refus de connexion `pending` et `suspended` sont distingués uniquement après
+authentification correcte. API complètes et recette :
+[Workflow Client](../../docs/CLIENT_WORKFLOW.md).
+
 ## Sécurité
 Cookie de session HttpOnly posé par le serveur (aucun jeton en localStorage, sessionStorage ni dans
 l'URL), en-tête `X-Framatex-Request: 1` sur les écritures, aucun `client_id` envoyé par le navigateur,

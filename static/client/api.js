@@ -39,7 +39,11 @@ function toError(status, data, context) {
   const detail = data?.detail;
   const text = typeof detail === 'string' ? detail : '';
   if (status === 401) return new ClientApiError(context === 'login' ? 'invalid_credentials' : 'unauthenticated', { status });
-  if (status === 403) return new ClientApiError(context === 'login' || context === 'session' ? 'inactive' : 'forbidden', { status });
+  if (status === 403) {
+    if (detail?.code === 'account_pending') return new ClientApiError('pending', { status });
+    if (detail?.code === 'account_suspended') return new ClientApiError('suspended', { status });
+    return new ClientApiError(context === 'login' || context === 'session' ? 'inactive' : 'forbidden', { status });
+  }
   if (status === 404) return new ClientApiError('not_found', { status });
   if (status === 409) return new ClientApiError('conflict', { status, message: text });
   if (status === 413) return new ClientApiError('too_large', { status });
@@ -89,6 +93,7 @@ export function createOrderRequest({ article, quantite, date_souhaitee, referenc
 }
 /** GET /api/client/order-requests/{id} — détail avec documents et versions. */
 export function getOrderRequest(requestId) { return call(`/order-requests/${encodeURIComponent(requestId)}`); }
+export function submitOrderRequest(requestId) { return call(`/order-requests/${encodeURIComponent(requestId)}/status`, { method: 'PATCH', json: { status: 'submitted' } }); }
 
 // ---- Documents -------------------------------------------------------------
 /**
@@ -97,12 +102,16 @@ export function getOrderRequest(requestId) { return call(`/order-requests/${enco
  * XHR plutôt que fetch pour suivre la progression de l'envoi.
  */
 export function uploadDocument(requestId, file, { title, onProgress } = {}) {
+  return uploadFile(`/order-requests/${encodeURIComponent(requestId)}/documents`, file, { title: title || file.name, onProgress });
+}
+
+function uploadFile(path, file, { title, onProgress } = {}) {
   return new Promise((resolve, reject) => {
     const form = new FormData();
-    form.append('title', title || file.name);
+    if (title !== undefined) form.append('title', title);
     form.append('file', file);
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${BASE}/order-requests/${encodeURIComponent(requestId)}/documents`);
+    xhr.open('POST', BASE + path);
     xhr.withCredentials = true;
     xhr.setRequestHeader('X-Framatex-Request', '1');
     xhr.responseType = 'json';
@@ -115,9 +124,13 @@ export function uploadDocument(requestId, file, { title, onProgress } = {}) {
 
 /** GET …/documents/{documentId}/versions/{number}/download — fichier remis au navigateur. */
 export async function downloadDocument(requestId, documentId, version, filename) {
+  return downloadFile(`/order-requests/${encodeURIComponent(requestId)}/documents/${encodeURIComponent(documentId)}/versions/${encodeURIComponent(version)}/download`, filename);
+}
+
+async function downloadFile(path, filename) {
   let res;
   try {
-    res = await fetch(`${BASE}/order-requests/${encodeURIComponent(requestId)}/documents/${encodeURIComponent(documentId)}/versions/${encodeURIComponent(version)}/download`, { credentials: 'same-origin' });
+    res = await fetch(BASE + path, { credentials: 'same-origin' });
   } catch {
     throw new ClientApiError('network');
   }
@@ -135,6 +148,20 @@ export async function downloadDocument(requestId, documentId, version, filename)
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Pièces attendues et publications explicitement destinées au compte connecté.
+export function listDocumentRequests() { return call('/document-requests'); }
+export function getDocumentRequest(requestId) { return call(`/document-requests/${encodeURIComponent(requestId)}`); }
+export function uploadRequestedDocument(requestId, file, options = {}) {
+  return uploadFile(`/document-requests/${encodeURIComponent(requestId)}/upload`, file, { onProgress: options.onProgress });
+}
+export function downloadRequestedDocument(requestId, number, filename) {
+  return downloadFile(`/document-requests/${encodeURIComponent(requestId)}/versions/${encodeURIComponent(number)}/download`, filename);
+}
+export function listSharedDocuments() { return call('/shared-documents'); }
+export function downloadSharedDocument(shareId, filename) {
+  return downloadFile(`/shared-documents/${encodeURIComponent(shareId)}/download`, filename);
 }
 
 // Pas d'endpoint global des documents : la vue « Mes documents » est reconstruite côté interface

@@ -29,7 +29,7 @@ for (const ep of ["'/register'", "'/login'", "'/logout'", "'/me'", "'/order-requ
 for (const f of ['raison_sociale', 'nom_contact', 'telephone', 'adresse', 'pays', 'identifiant_fiscal', 'quantite', 'date_souhaitee', 'reference_client', 'commentaire', 'request_number', 'client_code'])
   assert(client.includes(f), f);
 // Statuts réellement supportés.
-assert(ui.includes('draft:') && ui.includes('submitted:') && !ui.includes('under_review'));
+for (const status of ['draft:', 'submitted:', 'under_review:', 'accepted:', 'rejected:']) assert(ui.includes(status));
 // Écrans et messages métier.
 for (const route of ['/connexion', '/inscription', '/en-attente', '/demandes', '/demandes/nouvelle', '/demandes/:id', '/documents', '/compte'])
   assert(client.includes(`path: '${route}'`), route);

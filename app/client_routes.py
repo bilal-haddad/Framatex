@@ -31,6 +31,14 @@ CLIENT_STORAGE.mkdir(parents=True, exist_ok=True)
 MAX_UPLOAD = 20 * 1024 * 1024
 EXTS = {".pdf", ".docx", ".xlsx", ".png", ".jpg", ".jpeg", ".txt"}
 MIMES = {".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".txt": "text/plain"}
+_DUMMY_CLIENT_HASH = hash_password(secrets.token_urlsafe(32))
+
+
+def inactive_account(status: str):
+    pending = status == "pending"
+    return HTTPException(403, {"code": "account_pending" if pending else "account_suspended",
+        "message": "Votre compte est en attente de validation par FRAMATEX." if pending else
+                   "Votre compte a été suspendu. Contactez FRAMATEX."})
 
 
 def normalized_email(value: str) -> str:
@@ -95,8 +103,10 @@ def get_current_client(request: Request, db: Session = Depends(get_db)) -> Clien
         client = db.get(ClientAccount, payload["sub"])
     except (jwt.InvalidTokenError, KeyError):
         raise HTTPException(401, "Session client expirée ou invalide")
-    if not client or client.status != "active":
-        raise HTTPException(403, "Compte client non actif")
+    if not client:
+        raise HTTPException(401, "Session client invalide")
+    if client.status != "active":
+        raise inactive_account(client.status)
     return client
 
 
@@ -171,12 +181,13 @@ def client_login(payload: ClientLoginPayload, response: Response, request: Reque
     if not login_attempt_allowed(key):
         raise HTTPException(429, "Trop de tentatives : réessayez dans quelques minutes")
     client = db.scalar(select(ClientAccount).where(func.lower(ClientAccount.email) == payload.email))
-    if not client or not check_password(client.password_hash, payload.password):
+    verified = check_password(client.password_hash if client else _DUMMY_CLIENT_HASH, payload.password)
+    if not client or not verified:
         record_login_failure(key)
         raise HTTPException(401, "Identifiants incorrects")
     if client.status != "active":
         record_login_failure(key)
-        raise HTTPException(403, "Compte client en attente d'activation ou suspendu")
+        raise inactive_account(client.status)
     clear_login_failures(key)
     response.set_cookie(CLIENT_COOKIE, client_token(client.id), max_age=8 * 3600,
                         httponly=True, secure=os.getenv("FRAMATEX_COOKIE_SECURE") == "1",
@@ -326,6 +337,10 @@ async def upload_order_document(order_id: str, title: str = Form(...), file: Upl
     try:
         document = db.scalar(select(ClientOrderDocument).where(
             ClientOrderDocument.order_request_id == order.id, ClientOrderDocument.title == title))
+        if document:
+            from .client_workflow_models import ClientDocumentRequest
+            if db.scalar(select(ClientDocumentRequest.id).where(ClientDocumentRequest.document_id == document.id)):
+                raise HTTPException(409, "Utilisez le dépôt de la demande documentaire FRAMATEX pour cette pièce")
         if not document:
             document = ClientOrderDocument(order_request_id=order.id, title=title)
             db.add(document)

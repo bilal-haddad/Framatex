@@ -1,5 +1,10 @@
 # Framatex — Dossier jaune numérique (MVP 0.19)
 
+> **Workflow Client final sur la plateforme intégrée** : décisions de commande,
+> pièces demandées avec corrections et versions, partage réel et retrait vers un
+> compte Client explicite. Migration additive `0006_client_workflow`.
+> [API, sécurité et recette](docs/CLIENT_WORKFLOW.md).
+
 > **Livraison 0.20 — pilotage interne du Dossier Jaune.** Dashboard métier,
 > commandes, recherche documentaire, audit filtré, commentaires de version,
 > mémoire interne et consultation des demandes Client. Migration additive

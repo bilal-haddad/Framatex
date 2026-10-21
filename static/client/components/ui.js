@@ -51,7 +51,19 @@ export function fmtSize(bytes) {
 export const REQUEST_STATUS = {
   draft: { label: 'Brouillon', tone: 'neutral', help: 'La demande est enregistrée mais n’a pas été soumise à FRAMATEX.' },
   submitted: { label: 'Envoyée', tone: 'info', help: 'FRAMATEX a reçu votre demande et l’examinera avant toute commande officielle.' },
+  under_review: { label: 'En cours d’étude', tone: 'info', help: 'FRAMATEX étudie votre demande de commande.' },
+  accepted: { label: 'Acceptée', tone: 'success', help: 'FRAMATEX a accepté votre demande. Cette décision ne crée pas une commande ORLI.' },
+  rejected: { label: 'Refusée', tone: 'danger', help: 'FRAMATEX a refusé cette demande. Contactez votre interlocuteur pour toute précision.' },
 };
+export const DOCUMENT_STATUS = {
+  requested: { label: 'Demandé', tone: 'warn' }, uploaded: { label: 'Déposé', tone: 'info' },
+  under_review: { label: 'En vérification', tone: 'info' }, accepted: { label: 'Accepté', tone: 'success' },
+  correction_required: { label: 'À corriger', tone: 'danger' },
+};
+export function documentStatusBadge(status) {
+  const s = DOCUMENT_STATUS[status] || { label: status || 'Inconnu', tone: 'neutral' };
+  return `<span class="badge badge-${s.tone}"><span class="badge-dot" aria-hidden="true"></span>${esc(s.label)}</span>`;
+}
 export function statusBadge(status) {
   const s = REQUEST_STATUS[status] || { label: status || 'Inconnu', tone: 'neutral' };
   return `<span class="badge badge-${s.tone}"><span class="badge-dot" aria-hidden="true"></span>${esc(s.label)}</span>`;

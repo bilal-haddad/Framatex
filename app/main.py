@@ -780,5 +780,8 @@ app.include_router(client_router)
 from .internal_routes import router as internal_router
 app.include_router(internal_router)
 
+from .client_workflow_routes import router as client_workflow_router
+app.include_router(client_workflow_router)
+
 # Le contrôle global de portée est effectué dans request_header_guard, avant
 # le dispatch FastAPI. Aucun routeur historique ne peut l'éviter.

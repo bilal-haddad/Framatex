@@ -281,7 +281,7 @@ def test_migration_from_previous_schema_preserves_accounts_and_is_repeatable(tmp
     new_tables = {'launch_operations', 'internal_document_comments', 'internal_experience_notes'}
     Base.metadata.create_all(old_engine, tables=[table for name, table in Base.metadata.tables.items() if name not in new_tables])
     with old_engine.begin() as conn:
-        for revision in migration.REVISIONS[:-1]:
+        for revision in ('0001_baseline', '0002_launch_scope', '0003_pilot_reports', '0004_client_space'):
             conn.execute(text('INSERT INTO schema_migrations VALUES (:v,:d)'), {'v': revision, 'd': '2026-01-01'})
         conn.execute(text("INSERT INTO users (id,email,name,password_hash,active,created_at) VALUES ('keep','keep@example.test','Compte existant','hash-preserve',1,'2026-01-01')"))
     monkeypatch.setattr(migration, 'engine', old_engine)
