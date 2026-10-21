@@ -300,3 +300,8 @@
   .dj .dj-folder:hover, .dj-dash .dash-kpi:hover { transform: none; }
   .dj-dash .dash-kpi { transition: none; }
 }
+
+/* Contraste AA des libellés secondaires du cadre FRAMATEX (rôle, fil d'Ariane, raccourci). */
+.user-role, .breadcrumb-home, .topbar-environment { color: var(--fx-muted); }
+body .topbar-search kbd { color: var(--fx-text); border-color: var(--fx-line-strong); }
+.ops-link-row small { color: var(--fx-muted); }

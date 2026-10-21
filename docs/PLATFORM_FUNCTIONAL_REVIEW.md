@@ -4,6 +4,13 @@ Branche : `final/platform-review` — base : dernier commit de Codex
 `032d029` (« feat: complete client request and document workflows »).
 Recette du 21 octobre 2026, Chromium headless, largeurs 1440, 1024, 820 et 390 px.
 
+> **Mise à jour `design/final-framatex-ux`** : Dossier Jaune en checklist par
+> sous-dossier (profil « Dossier Jaune FRAMATEX standard » appliqué automatiquement),
+> tableau de bord centré sur les documents manquants, modules avancés regroupés en
+> onglets, Espace Client à quatre entrées, landing réordonnée. Détails, checklists
+> exactes et limites : `docs/UX_FINAL_FRAMATEX.md`. Recette : 171 tests Python,
+> 18 scripts JS, 94 contrôles API, 132 contrôles de recette complète.
+
 Ce document liste chaque fonction de la plateforme : ce qu'elle fait, où la
 trouver, comment la tester et son état réel. Une fonction n'est notée
 « Fonctionnel » que si elle a été exercée pendant la recette (API réelle, navigateur
@@ -34,8 +41,8 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 Recette automatique complète (base temporaire, aucune donnée réelle touchée) :
 
 ```bash
-python scripts/qa_platform_review.py --output data/qa-platform     # API : 87 vérifications
-python scripts/demo_full_platform.py --output data/demo-platform   # API + Chromium 1440/1024/820/390 : 111 vérifications
+python scripts/qa_platform_review.py --output data/qa-platform     # API : 94 vérifications
+python scripts/demo_full_platform.py --output data/demo-platform   # API + Chromium 1440/1024/820/390 : 132 vérifications
 ```
 
 Sous Windows, une seule commande prépare et lance la démonstration :
@@ -52,13 +59,13 @@ fiche de prix en attente de validation ; E `…0145` fiche d'emploi V2, impact,
 
 | Fonction | Ce qu'elle fait | Où | Comment tester | Statut | Preuve |
 | --- | --- | --- | --- | --- | --- |
-| Page d'accueil publique | Hero, « Choisissez votre espace », « Notre solution », chaîne de valeur en 5 étapes, partenariat École Centrale Casablanca, contact. | `/` — `static/landing/index.html` | Ouvrir `/` en 1440 et 390 px. | Fonctionnel | QA, Nav |
+| Page d'accueil publique | Hero → Notre solution (repères réels) → Nos espaces (« Choisissez votre espace ») → chaîne de valeur en 5 étapes → partenariat École Centrale Casablanca → appel à l'action → contact. Mouvements discrets désactivés en mouvement réduit. | `/` — `static/landing/index.html` | Ouvrir `/` en 1440 et 390 px. | Fonctionnel | QA, Nav |
 | Accès aux deux espaces | Cartes photo vers l'Espace Client et l'Espace FRAMATEX. | `/` → `/espace-client`, `/espace-framatex` | Cliquer chaque carte. | Fonctionnel | QA, Nav |
 | Contact | Liens `mailto:` et `tel:` (Maroc, France). Aucun formulaire. | Pied de page | Cliquer les liens. | Fonctionnel | Nav |
 | Logo officiel | Seul le logo officiel `static/landing/logo-framatex.jpg` est utilisé (aussi favicon). | Les trois espaces | Comparer les en-têtes. | Fonctionnel | QA, Nav |
 | Anciens liens QR | `/#/launch/<id>` est redirigé vers `/espace-framatex#/launch/<id>`. | `static/landing/landing-redirect.js` | Ouvrir `/#/launch/xyz`. | Fonctionnel | QA |
 | Responsive et menu mobile | Mise en page 1440 → 390 px sans défilement horizontal. | `static/landing/landing.css` | Redimensionner, ouvrir le menu à 390 px. | Fonctionnel | Nav |
-| Poids des pages | 23 requêtes, 921 Ko (visuel « Notre solution » converti en WebP : 452 → 42 Ko). | — | DevTools > Réseau. | Fonctionnel | Nav |
+| Poids des pages | Photos servies en AVIF puis WebP (repli JPEG/WebP) : hero 107 → 47 Ko, espaces 217/231 → 89/91 Ko. | — | DevTools > Réseau. | Fonctionnel | Nav |
 
 ## 2. Espace Client
 
@@ -71,7 +78,8 @@ fiche de prix en attente de validation ; E `…0145` fiche d'emploi V2, impact,
 | Compte suspendu | Écran dédié ; la session ouverte est refusée immédiatement. | `#/suspendu` | Suspendre le compte côté FRAMATEX. | Fonctionnel | QA, UI-cli |
 | Mes demandes | Liste des demandes de commande avec statut en français. | `#/demandes` | Se connecter avec un compte actif. | Fonctionnel | QA, UI-cli |
 | Nouvelle demande | Article, quantité, date souhaitée, référence, commentaire, pièces jointes ; brouillon ou envoi. | `#/demandes/nouvelle` | Enregistrer un brouillon, puis l'envoyer. | Fonctionnel | QA, UI-cli |
-| Détail d'une demande | Statut, informations, pièces jointes téléchargeables. | `#/demandes/<id>` | Ouvrir une demande. | Fonctionnel | UI-cli, Nav |
+| Détail d'une demande | Statut, informations, vos documents déposés, documents demandés par FRAMATEX et documents reçus pour cette demande. | `#/demandes/<id>` | Ouvrir une demande. | Fonctionnel | UI-cli, Nav |
+| Menu | Quatre entrées : Mes demandes, Nouvelle demande, Documents (onglets À fournir · Reçus de FRAMATEX · Mes dépôts, pastille des pièces à fournir), Mon compte. | Menu latéral / tiroir | Ouvrir « Documents ». | Fonctionnel | JS, Nav |
 | Documents demandés par FRAMATEX | Pièces attendues : À déposer → Déposée → En vérification → À corriger → Acceptée. | `#/documents-demandes` | Déposer une pièce demandée. | Fonctionnel | QA, UI-cli |
 | Correction / nouvel envoi | Le message de FRAMATEX s'affiche en bandeau ; le nouvel envoi crée une V2, la V1 reste téléchargeable. | `#/documents-demandes/<id>` | Demander une correction côté FRAMATEX puis redéposer. | Fonctionnel | QA, UI-cli |
 | Documents transmis par FRAMATEX | Versions explicitement partagées, téléchargeables ; disparaissent dès le retrait. | `#/documents-transmis` | Partager puis retirer côté FRAMATEX. | Fonctionnel | QA, UI-cli |
@@ -86,7 +94,7 @@ fiche de prix en attente de validation ; E `…0145` fiche d'emploi V2, impact,
 | Fonction | Ce qu'elle fait | Où | Comment tester | Statut | Preuve |
 | --- | --- | --- | --- | --- | --- |
 | Connexion collaborateurs | Email + mot de passe internes (système existant, inchangé). | `/espace-framatex` | Bon / mauvais mot de passe. | Fonctionnel | QA |
-| Tableau de bord | Dans l'ordre : KPI → Actions prioritaires → Documents manquants → Complétude des dossiers → Alertes et incohérences → Dernières activités. Chaque ligne ouvre le bon dossier et la bonne rubrique. | Tableau de bord | Cliquer une pièce manquante. | Fonctionnel | QA, UI-int, Nav |
+| Tableau de bord | Dans l'ordre : indicateurs → Actions prioritaires → Documents manquants (Sous-dossier, Document, Commande, Client, État, Ouvrir ; filtre par sous-dossier) → Complétude des dossiers → Alertes importantes → Activité récente. Un manquant ouvre le dossier, le sous-dossier et la ligne de checklist. | Tableau de bord | Cliquer une pièce manquante. | Fonctionnel | QA, UI-int, Nav |
 | Commandes et lancements | Liste filtrable : référence, client, modèle, complétude, statut, dates d'activité, alertes. | Commandes et lancements | Filtrer sur « Incomplet ». | Fonctionnel | UI-int, pytest |
 | Création / modification de dossier | Création avec les quatre sous-dossiers ; référence ORLI facultative. | « Nouveau dossier », « Modifier le dossier » | Créer un dossier. | Fonctionnel | QA, pytest |
 | Suivi métier | Article, quantité, références provisoire et définitive, responsable. | Fiche commande du dossier | « Modifier le suivi métier ». | Fonctionnel | pytest, UI-int |
@@ -103,12 +111,13 @@ fiche de prix en attente de validation ; E `…0145` fiche d'emploi V2, impact,
 
 | Fonction | Ce qu'elle fait | Où | Comment tester | Statut | Preuve |
 | --- | --- | --- | --- | --- | --- |
-| Fiche commande | Commande, client, modèle, quantité, références, responsable, dernière activité, barre de complétude. | En tête du dossier | Ouvrir le dossier B. | Fonctionnel | UI-int, Nav |
-| Quatre sous-dossiers | JAUNE / TECHNIQUE, ROSE / RÉCEPTION, BLEU / DÉDOUANEMENT, VERT / FACTURES, avec compteurs (documents, manquants, à vérifier, alertes). | Cartes 01 à 04 | Cliquer chaque carte. | Fonctionnel | UI-int, Nav |
+| En-tête | Commande, client, modèle, quantité, date souhaitée, référence client, ORLI si renseigné, état, complétude X / Y et étape. | En tête du dossier | Ouvrir le dossier B. | Fonctionnel | UI-int, Nav |
+| Quatre sous-dossiers | Technique, Réception, Dédouanement, Factures : X / Y présents, barre, manquants, à valider, à venir. | Cartes 01 à 04 | Cliquer chaque carte. | Fonctionnel | UI-int, Nav |
+| Checklist par sous-dossier | Une ligne par type : Document, État (Présent, Manquant, En validation, Non exigible, Exception), Dernière version, Date, Action (Déposer prérempli, Valider, Ouvrir). | Onglet Documents | Dossier créé depuis une demande, cas A–F. | Fonctionnel | pytest, JS, Nav (cas A–F) |
 | Repères couleur | Filet supérieur et pictogramme teintés par rubrique (jaune, rose, bleu, vert). Discrets, l'interface reste bleu nuit. | Cartes et en-têtes de rubrique | Visuel. | Fonctionnel | Nav (planche 09) |
 | Droits par rubrique | Une rubrique non autorisée n'expose ni titre, ni compteur, ni document. | Cartes « Accès restreint » | Rôle limité à Jaune. | Fonctionnel | QA, Nav |
 | Accès restreint par dossier | L'administrateur réserve un dossier à des membres nommés. | Panneau d'accès du dossier | Restreindre, ajouter puis retirer un membre. | Fonctionnel | QA, pytest |
-| Navigation interne | « Aller à une rubrique » et « Haut de page » sur les dossiers longs. | Sous la fiche commande | Choisir « Simulation ». | Fonctionnel | Nav |
+| Onglets | Documents · Contrôles · Communication · Historique ; tous les modules avancés conservés en sous-navigation. Précautions regroupées dans « À savoir ». | Sous les cartes | Contrôles → Simulation. | Fonctionnel | UI-int, Nav |
 | QR et passeport | Étiquette papier avec QR vers le dossier ; passeport d'une version (hash, auteur, date). | Section « QR et passeports » | Imprimer l'étiquette, ouvrir un passeport. | Fonctionnel | QA, pytest |
 
 ## 5. Documents
@@ -129,6 +138,8 @@ fiche de prix en attente de validation ; E `…0145` fiche d'emploi V2, impact,
 
 | Fonction | Ce qu'elle fait | Où | Comment tester | Statut | Preuve |
 | --- | --- | --- | --- | --- | --- |
+| Profil standard automatique | « Dossier Jaune FRAMATEX standard » (22 lignes) appliqué à la création depuis une demande Client et à « Nouveau Dossier Jaune », étape Préparation, jamais dupliqué ni imposé sur un profil existant. | Création du dossier | Accepter une demande Client. | Fonctionnel | pytest, Nav |
+| Pièces facultatives | Règle `required = false` : jamais exigible, donc jamais manquante (migration 0008). | Checklist | Emails techniques. | Fonctionnel | pytest |
 | Profils et règles | Profils de complétude par type de dossier, règles par rubrique et étape. | Administration (API `/api/admin/completeness/*`) | Lister les profils. | Fonctionnel | pytest |
 | Contexte du dossier | Profil + étape (approvisionnement, fabrication, expédition…). | « Profil et étape » | Passer C de l'expédition à l'approvisionnement. | Fonctionnel | QA |
 | Cinq états | `present`, `missing`, `pending_validation`, `not_due`, `exception`. | Section « Complétude documentaire » | Voir B (missing), C (not_due / exception), D (pending_validation). | Fonctionnel | QA (5 états observés) |

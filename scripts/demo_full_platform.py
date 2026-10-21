@@ -121,7 +121,7 @@ def full_journey(qa, browser, base, admin_password, captures):
         def activate():
             internal_login(admin, 'recette@framatex.test', admin_password)
             headings = adm.locator('main h2').all_inner_texts()
-            order = ['Actions prioritaires', 'Documents manquants', 'Complétude des dossiers', 'Alertes et incohérences', 'Dernières activités']
+            order = ['Actions prioritaires', 'Documents manquants', 'Complétude des dossiers', 'Alertes importantes', 'Activité récente']
             assert [h for h in headings if h in order] == order, headings
             admin.check_page('parcours-dashboard')
             nav(adm, 'clients')
@@ -164,8 +164,11 @@ def full_journey(qa, browser, base, admin_password, captures):
             adm.click('#cw-create-launch')
             adm.wait_for_selector('#ops-launch-summary .ops-client-origin')
             assert adm.locator('.folder-card').count() == 4
-            origin = adm.locator('.ops-client-origin').inner_text()
-            assert 'REF-DEMO-UI' in origin and '720 pièces' in origin, origin
+            summary = adm.locator('#ops-launch-summary').inner_text()
+            assert 'REF-DEMO-UI' in summary and '720 pièces' in summary, summary
+            # Profil standard appliqué automatiquement, étape Préparation, 4 checklists.
+            assert 'Préparation' in summary, summary
+            assert adm.locator('.dj-checklist .dj-row').count() == 10
             order = next(r for r in admin.context.request.get(base + '/api/admin/client-order-requests').json() if r['article'] == 'Chemise démonstration Envoyée')
             once = admin.context.request.post(base + f'/api/admin/client-order-requests/{order["id"]}/launch', headers=recette.H)
             assert once.status == 200
@@ -177,6 +180,67 @@ def full_journey(qa, browser, base, admin_password, captures):
             adm.locator('#cw-open-launch').click()
             adm.wait_for_selector('#ops-launch-summary .ops-client-origin')
         qa.run('Navigateur', 'FRAMATEX : « Accepter et créer le Dossier Jaune » ouvre le dossier (4 sous-dossiers, origine Client)', accept_and_open)
+
+        def checklist_cases():
+            # Dossier créé depuis la demande : profil standard, étape Préparation.
+            launch_id = adm.evaluate('state.detail.id')
+            ref = adm.locator('#ops-launch-summary').inner_text()
+            row = lambda title: adm.locator('.dj-row', has_text=title).first
+            def state_of(title):
+                return row(title).locator('.dj-state').inner_text().strip()
+            # C. Calcul du besoin absent en Préparation → Manquant ; D. Test tissu → Non exigible.
+            assert state_of('Calcul du besoin') == 'Manquant'
+            assert state_of('Test tissu') == 'Non exigible'
+            assert 'Exigible dès l’étape Fabrication' in row('Test tissu').inner_text()
+            # Passage à l'étape Approvisionnement par l'interface.
+            adm.click('#dj-edit-phase')
+            adm.select_option('#c-phase', 'approvisionnement')
+            adm.locator('#context-form button[type=submit]').click()
+            adm.wait_for_selector('#ops-launch-summary:has-text("Approvisionnement")')
+            # A. Tableau de bord → Documents manquants → Réception → Bon de livraison → bonne ligne.
+            nav(adm, 'home')
+            adm.click('[data-dash-filter="rose"]')
+            line = adm.locator('#ops-missing tr', has_text='Bon de livraison').filter(has=adm.locator(f'[data-ops-target*="{launch_id}"]'))
+            line.locator('[data-ops-target]').click()
+            adm.wait_for_selector('.dj-folder.selected[data-folder="rose"]')
+            adm.wait_for_selector('.dj-row:has-text("Bon de livraison") button:focus')
+            assert state_of('Bon de livraison') == 'Manquant'
+            admin.check_page('parcours-tableau-de-bord-vers-bon-de-livraison')
+            # B. Dépôt depuis la ligne : modale préremplie → Présent, V1, retiré des manquants.
+            row('Bon de livraison').locator('[data-dj-upload]').click()
+            assert adm.locator('#ops-folder').input_value() == 'rose'
+            assert adm.locator('#ops-type').input_value() == 'Bon de livraison'
+            adm.locator('#ops-file').set_input_files({'name': 'bl-v1.txt', 'mimeType': 'text/plain', 'buffer': b'Bon de livraison V1'})
+            adm.locator('#ops-upload-form button[type=submit]').click()
+            adm.wait_for_selector('.dj-row:has-text("Bon de livraison") .dj-state:has-text("Présent")')
+            assert 'V1' in row('Bon de livraison').inner_text()
+            missing = admin.context.request.get(base + '/api/workspace/dashboard').json()['missing_documents']
+            assert not any(m['launch_id'] == launch_id and m['title'] == 'Bon de livraison' for m in missing)
+            # F. Nouveau dépôt du même type → V2 sur la même ligne, aucun second document.
+            adm.click('#upload-doc')
+            adm.select_option('#ops-folder', 'rose')
+            adm.fill('#ops-type', 'Bon de livraison')
+            adm.wait_for_selector('#dj-version-note:has-text("V2")')
+            adm.locator('#ops-file').set_input_files({'name': 'bl-v2.txt', 'mimeType': 'text/plain', 'buffer': b'Bon de livraison V2'})
+            adm.locator('#ops-upload-form button[type=submit]').click()
+            adm.wait_for_selector('.dj-row:has-text("Bon de livraison") td:has-text("V2")')
+            report = admin.context.request.get(base + f'/api/launches/{launch_id}/completeness').json()
+            delivery = next(r for r in report['rows'] if r['title'] == 'Bon de livraison')
+            assert delivery['status'] == 'present' and len(delivery['documents']) == 1 and delivery['documents'][0]['version'] == 2
+            # E. Fiche de prix déposée → En validation → validée dans l'interface → Présent.
+            adm.click('.dj-folder[data-folder="jaune"]')
+            row('Fiche de prix').locator('[data-dj-upload]').click()
+            adm.locator('#ops-file').set_input_files({'name': 'prix.txt', 'mimeType': 'text/plain', 'buffer': b'Fiche de prix'})
+            adm.locator('#ops-upload-form button[type=submit]').click()
+            adm.wait_for_selector('.dj-row:has-text("Fiche de prix") .dj-state:has-text("En validation")')
+            row('Fiche de prix').locator('[data-complete-validate]').click()
+            adm.locator('#approve-form button[type=submit]').click()
+            adm.wait_for_selector('.dj-row:has-text("Fiche de prix") .dj-state:has-text("Présent")')
+            # Facultatif et exception : jamais « Manquant ».
+            assert state_of('Emails techniques') == 'Non exigible' and 'Facultatif' in row('Emails techniques').inner_text()
+            admin.check_page('parcours-checklist-technique')
+            assert ref
+        qa.run('Navigateur', 'Checklist Dossier Jaune : cas C/D, étape, lien tableau de bord → ligne Bon de livraison, dépôt V1 puis V2, validation Fiche de prix', checklist_cases)
 
         def reject_other():
             nav(adm, 'clients')

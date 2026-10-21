@@ -62,6 +62,9 @@ def internal_journey(qa, browser, base, password, ids, captures):
         page.locator('#ops-file').set_input_files({'name': name, 'mimeType': 'application/octet-stream', 'buffer': blob})
         page.fill('#ops-title', title); page.fill('#ops-type', kind)
         page.fill('#ops-upload-comment', 'Commentaire interne recette navigateur — ne jamais publier.')
+        # Un type déjà présent est proposé en nouvelle version ; la recette crée ici un document distinct.
+        if page.locator('#dj-separate').count():
+            page.check('#dj-separate')
         if analyze:
             page.locator('#ops-analyze').click()
             expect(page.locator('#ops-analysis')).to_contain_text('Calcul du besoin', timeout=20000)
@@ -123,6 +126,8 @@ def internal_journey(qa, browser, base, password, ids, captures):
             page.locator('#ops-doc-download').click()
         assert Path(event.value.path()).read_bytes() == b'Fiche emploi navigateur version 1'
         page.locator('#close-modal').click()
+        # Décisions et impacts : onglet « Contrôles » du Dossier Jaune.
+        page.evaluate("focusWorkspaceArea('workflow')")
         review = page.locator('.workflow-review-table tr', has_text=title)
         review.locator('[data-document-review]').click()
         page.locator('#decision-status').select_option('approved')
@@ -152,6 +157,7 @@ def internal_journey(qa, browser, base, password, ids, captures):
         version = updated.value.json()['latest']
         expect(page.locator('.modal')).to_contain_text(f'Commentaires internes · V{version["number"]}')
         page.locator('#close-modal').click()
+        page.evaluate("focusWorkspaceArea('quality')")
         page.locator('#quality-add-data').click()
         page.select_option('#qd-version', version['id'])
         page.select_option('#qd-field', rule['field_key'])
@@ -178,6 +184,7 @@ def internal_journey(qa, browser, base, password, ids, captures):
         open_folder(ids['B'])
         image = files.image_bytes('PNG', 'CALCUL DU BESOIN\nQuantite : 1800 pieces')
         before = view.context.request.get(base + f'/api/launches/{ids["B"]}').json()
+        page.evaluate("focusWorkspaceArea('intake')")
         page.locator('#intake-open').click()
         page.locator('#intake-file').set_input_files({'name': 'calcul.png', 'mimeType': 'image/png', 'buffer': image})
         page.locator('#intake-file-form button[type=submit]').click()
@@ -188,12 +195,14 @@ def internal_journey(qa, browser, base, password, ids, captures):
         page.fill('#intake-title', 'Calcul OCR confirmé par le navigateur')
         page.locator('#intake-confirm-form button[type=submit]').click()
         expect(page.locator('.detail-layout')).to_contain_text('Calcul OCR confirmé par le navigateur')
+        page.evaluate("focusWorkspaceArea('documents')")
         page.locator('.detail-layout tr', has_text='Calcul OCR confirmé par le navigateur').locator('[data-history]').click()
         page.locator('#ops-doc-intake').click()
         expect(page.locator('[data-intake-confirm="quantite"]')).to_be_visible(timeout=20000)
         page.locator('[data-intake-confirm="quantite"]').click()
         expect(page.locator('.modal')).to_contain_text('quantite : 1800')
         page.locator('#close-modal').click()
+        page.evaluate("focusWorkspaceArea('mail')")
         page.locator('#mail-import').click()
         message_bytes = files.eml_bytes().replace(b'Nous confirmons la livraison du lot pour le', b'Nous livrerons le lot le')
         page.locator('#mail-upload-file').set_input_files({'name': 'confirmation-ui.eml', 'mimeType': 'message/rfc822', 'buffer': message_bytes})
@@ -219,6 +228,7 @@ def internal_journey(qa, browser, base, password, ids, captures):
         page.locator('#ops-search-results [data-ops-target]').first.click()
         expect(page.locator('.modal')).to_contain_text(title)
         page.locator('#close-modal').click()
+        page.evaluate("focusWorkspaceArea('notes')")
         page.locator('#ops-add-note').click()
         page.select_option('#ops-party-type', 'atelier')
         page.fill('#ops-party-name', 'Atelier recette navigateur')

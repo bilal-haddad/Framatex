@@ -470,14 +470,19 @@ function djBind() {
 
 // Les précautions d'usage restent disponibles, regroupées dans une note « À savoir »
 // repliée par module, au lieu d'être répétées en tête de chaque bloc.
-const DJ_NOTE = /\b(aucun|aucune|ne remplac|ne garanti|n[’']équivalent|ne prouvent|jamais|il ne s[’']agit|servent à tester|pas des erreurs|uniquement|doivent être relevées|seules les versions|méritent une vérification)/i;
+// Phrases fixes de précaution des modules (jamais de contenu saisi par un utilisateur).
+const DJ_NOTES = ['Les valeurs sont saisies à partir d’une version documentaire identifiable', 'Les alertes sont générées uniquement par des règles métier',
+  'Une approbation porte sur une version donnée', 'Compare deux types de pièces d’un même lancement', 'Inspection lors du dépôt d’un .xlsx',
+  'Les divergences et signaux Excel demandent une vérification humaine', 'Analyse locale du fichier', 'Les résultats de l’analyse n’équivalent pas',
+  'Analyse limitée aux passages lisibles du document', 'Les liens de calcul sont explicites', 'Les données affichées proviennent de déclarations',
+  '* Reste à recevoir', 'Les rapprochements proposés reposent uniquement', 'Seules les versions autorisées et validées',
+  'Ces vues servent à tester les règles métier', 'Les contrôles sont indicatifs'].map(text => text.replace(/[’']/g, '\''));
 function djConsolidateNotes() {
+  const isNote = el => { const text = el.textContent.trim().replace(/[’']/g, '\''); return DJ_NOTES.some(prefix => text.startsWith(prefix)); };
   app.querySelectorAll('.dj-module').forEach(module => {
     if (module.querySelector(':scope > .dj-help')) return;
     const notes = [...module.querySelectorAll('p, .ops-muted, .notice')].filter(el =>
-      !el.closest('table, form, li, button, label, .ops-empty, .empty, .dj-empty, details, .modal')
-      && !el.querySelector('button, input, select, textarea, a')
-      && el.textContent.trim().length >= 70 && DJ_NOTE.test(el.textContent));
+      !el.closest('table, form, li, button, label, details, .modal, #ops-notes, .ops-comment') && !el.querySelector('button, input, select, textarea, a') && isNote(el));
     if (!notes.length) return;
     const help = document.createElement('details');
     help.className = 'dj-help';

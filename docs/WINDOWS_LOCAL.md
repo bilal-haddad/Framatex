@@ -20,6 +20,13 @@ démarrage nécessite Internet. Après nettoyage des anciens serveurs, SQLite es
 contrôlée, sauvegardée et migrée selon le mécanisme existant. Une intégrité SQLite
 non valide est bloquante. Aucun schéma ni migration métier n'est ajouté ici.
 
+Fuseau horaire : Windows ne fournit pas la base IANA. Le paquet `tzdata` est
+déclaré dans `requirements.txt` et vérifié par `scripts/windows_preflight.py` ;
+sans lui, `ZoneInfo("Africa/Casablanca")` lève `ZoneInfoNotFoundError`. Une base
+existante reçoit au démarrage la migration `0008_optional_rules` (colonne
+`required` des règles de complétude, valeur 1 pour les règles existantes), par le
+mécanisme de migration habituel, après la sauvegarde SQLite.
+
 Compte : `admin.test@framatex.com`.
 
 - Absent : mot de passe demandé deux fois, en saisie masquée.

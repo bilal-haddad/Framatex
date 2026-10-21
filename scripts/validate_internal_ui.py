@@ -151,6 +151,8 @@ def run_browser(output, base_url, email, password, ids):
             expect(page.locator('.modal-body')).to_contain_text('Commentaires internes · V1')
             capture('historique-versions', width)
             page.locator('#close-modal').click()
+            # Les contrôles avancés sont regroupés dans l'onglet « Contrôles ».
+            page.evaluate("focusWorkspaceArea('workflow')")
             capture('alertes', width, '.workflow-root')
             page.evaluate("navigate('audit')")
             expect(page.locator('#ops-audit-results')).to_contain_text('Responsable démonstration')
@@ -177,6 +179,8 @@ def run_browser(output, base_url, email, password, ids):
         page.locator('#ops-title').fill('Calcul du besoin recette navigateur')
         page.locator('#ops-type').fill('Calcul du besoin')
         page.locator('#ops-upload-comment').fill('Commentaire interne de la recette navigateur')
+        if page.locator('#dj-separate').count():
+            page.check('#dj-separate')
         page.locator('#ops-analyze').click()
         expect(page.locator('#ops-analysis')).to_contain_text('Calcul du besoin')
         page.locator('#ops-upload-form button[type=submit]').click()
@@ -192,11 +196,13 @@ def run_browser(output, base_url, email, password, ids):
 
         page.evaluate('(id)=>openLaunch(id,"jaune")', ids['E'])
         expect(page.locator('#ops-launch-summary')).to_be_visible()
+        page.evaluate("focusWorkspaceArea('quality')")
         page.locator('[data-quality-decision]').first.click()
         page.locator('#qdec-type').select_option('to_correct')
         page.locator('#qdec-note').fill('Écart vérifié : comparer les quantités avec le responsable production.')
         page.locator('#qdec-form button[type=submit]').click()
         expect(page.locator('.quality-root')).to_contain_text('Correction demandée')
+        page.evaluate("focusWorkspaceArea('workflow')")
         page.locator('[data-impact-review]').first.click()
         page.locator('#impact-status').select_option('acknowledged')
         page.locator('#impact-note').fill('Calcul du besoin et fiche de prix examinés pendant la recette fictive.')
