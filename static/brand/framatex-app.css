@@ -188,3 +188,6 @@ button.ops-kpi:hover { border-color: var(--fx-navy); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* Barre latérale étroite : la marque reste sur une ligne. */
+@media (max-width: 1100px) { .sidebar .brand-sub { display: none; } }
