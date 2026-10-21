@@ -10,8 +10,8 @@
   <link rel="preload" as="image" href="/assets/landing/hero-textile-woman.avif" type="image/avif" fetchpriority="high" />
   <link rel="icon" type="image/jpeg" href="/assets/landing/logo-framatex.jpg" />
   <link rel="stylesheet" href="/assets/brand/tokens.css" />
-  <link rel="stylesheet" href="/assets/landing/landing.css?v=ux-final-1" />
-  <script defer src="/assets/landing/landing.js?v=ux-final-1"></script>
+  <link rel="stylesheet" href="/assets/landing/landing.css?v=ux-premium-1" />
+  <script defer src="/assets/landing/landing.js?v=ux-premium-1"></script>
 </head>
 <body class="lp">
   <a class="skip-link" href="#contenu">Aller au contenu</a>
@@ -40,7 +40,7 @@
 
   <main id="contenu">
     <!-- 1. Hero -->
-    <section class="hero" id="accueil" aria-labelledby="hero-title">
+    <section class="hero" id="accueil" aria-labelledby="hero-title" data-hero>
       <div class="hero-media" data-media data-parallax>
         <picture>
           <source srcset="/assets/landing/hero-textile-woman.avif" type="image/avif" />
@@ -49,7 +49,7 @@
         </picture>
       </div>
       <div class="container hero-inner">
-        <div class="hero-copy">
+        <div class="hero-copy" data-hero-copy>
           <p class="eyebrow eyebrow-light">Portail documentaire FRAMATEX</p>
           <h1 id="hero-title">
             <span>Chaque commande.</span>
@@ -78,7 +78,7 @@
         <div class="solution-head reveal">
           <p class="eyebrow">Notre solution</p>
           <h2 id="solution-title">Digitaliser les échanges sans perdre les repères métier</h2>
-          <figure class="solution-media" data-media>
+          <figure class="solution-media" data-media data-depth>
             <picture>
               <source srcset="/assets/landing/redesign/notre-solution.avif" type="image/avif" />
               <img src="/assets/landing/redesign/notre-solution.webp" alt="Styliste préparant des pièces textiles dans un atelier" width="563" height="513" loading="lazy" decoding="async" data-fallback />
@@ -98,7 +98,7 @@
               <dd>Centraliser, sécuriser et organiser les documents liés à chaque commande.</dd>
             </div>
           </dl>
-          <ul class="figures" aria-label="Repères">
+          <ul class="figures" aria-label="Repères" data-draw>
             <li><strong data-count="2">2</strong><span>espaces : Client et FRAMATEX</span></li>
             <li><strong data-count="4">4</strong><span>sous-dossiers par Dossier Jaune</span></li>
             <li><strong data-count="5">5</strong><span>étapes de la chaîne de valeur</span></li>
@@ -120,7 +120,7 @@
         </div>
 
         <div class="spaces-stack">
-          <article class="space space-client reveal" aria-labelledby="space-client-title">
+          <article class="space space-client reveal" data-tilt aria-labelledby="space-client-title">
             <div class="space-body">
               <div class="space-top">
                 <span class="space-index">01</span>
@@ -135,7 +135,7 @@
               </ul>
               <a class="btn btn-primary space-cta" href="/espace-client">Accéder à l’espace client <span class="arrow" aria-hidden="true">→</span></a>
             </div>
-            <div class="space-media" data-media>
+            <div class="space-media" data-media data-depth>
               <picture>
                 <source srcset="/assets/landing/redesign/espace-client.avif" type="image/avif" />
                 <img src="/assets/landing/redesign/espace-client.webp" alt="Échantillons de tissus et croquis de modèles sur une table d’atelier" width="1448" height="1086" loading="lazy" decoding="async" data-fallback />
@@ -144,7 +144,7 @@
             </div>
           </article>
 
-          <article class="space space-internal reveal" aria-labelledby="space-internal-title">
+          <article class="space space-internal reveal" data-tilt aria-labelledby="space-internal-title">
             <div class="space-body">
               <div class="space-top">
                 <span class="space-index">02</span>
@@ -159,7 +159,7 @@
               </ul>
               <a class="btn btn-light space-cta" href="/espace-framatex">Accéder à l’espace FRAMATEX <span class="arrow" aria-hidden="true">→</span></a>
             </div>
-            <div class="space-media" data-media>
+            <div class="space-media" data-media data-depth>
               <picture>
                 <source srcset="/assets/landing/redesign/espace-framatex.avif" type="image/avif" />
                 <img src="/assets/landing/redesign/espace-framatex.webp" alt="Rouleaux de tissu alignés dans un atelier textile" width="1448" height="1086" loading="lazy" decoding="async" data-fallback />
@@ -240,11 +240,13 @@
           <p class="partnership-mark">FRAMATEX <span aria-hidden="true">×</span><span class="visually-hidden">et</span> École Centrale Casablanca</p>
         </div>
         <figure class="partnership-media reveal" data-media>
+          <div class="media-frame" data-depth>
           <picture>
             <source srcset="/assets/landing/partnership-meeting.avif" type="image/avif" />
             <source srcset="/assets/landing/partnership-meeting.webp" type="image/webp" />
             <img src="/assets/landing/partnership-meeting.jpg" alt="Réunion de partenariat entre l’équipe FRAMATEX et l’École Centrale Casablanca au Maroc" width="900" height="900" loading="lazy" decoding="async" data-fallback />
           </picture>
+          </div>
           <span class="asset-placeholder media-placeholder" aria-hidden="true">Photographie du partenariat à intégrer · partnership-meeting.jpg</span>
           <figcaption>Rencontre FRAMATEX — École Centrale Casablanca, Maroc.</figcaption>
         </figure>

@@ -393,9 +393,6 @@ picture { display: contents; }
   .step:hover .step-art img { transform: translateY(-4px); }
 }
 
-/* ---------- Parallaxe du hero (activée par landing.js hors mouvement réduit) ---------- */
-.hero-media.has-parallax img { transform: translate3d(0, var(--parallax, 0px), 0) scale(1.06); will-change: transform; }
-
 /* ---------- Chaîne de valeur : trait qui se dessine, étapes décalées ---------- */
 .steps::before { transform-origin: left center; transition: transform 1.4s var(--ease); }
 .steps.is-pending-line::before { transform: scaleX(0); }
@@ -417,6 +414,108 @@ picture { display: contents; }
 .cta-actions { display: flex; gap: 12px; flex-wrap: wrap; }
 .btn-outline-light { background: transparent; color: var(--white); border-color: rgba(255, 255, 255, .5); }
 .btn-outline-light:hover { background: var(--white); color: var(--navy); border-color: var(--white); }
+
+/* =============================================================================
+   Finition premium : profondeur légère, parallaxe, perspective, révélations.
+   Tout est en transform / opacity ; landing.js n'active ces effets que hors
+   « mouvement réduit », et seulement au pointeur fin pour l'inclinaison.
+   ============================================================================= */
+:root { --ease-out: cubic-bezier(.2, .7, .2, 1); }
+
+/* En-tête translucide au défilement */
+.site-header.is-scrolled { background: rgba(255, 255, 255, .88); -webkit-backdrop-filter: saturate(140%) blur(12px); backdrop-filter: saturate(140%) blur(12px); }
+
+/* Hero : la photo et le texte se déplacent à des profondeurs différentes. */
+.hero { perspective: 1200px; }
+.hero-media.has-depth img {
+  transform: translate3d(calc(var(--px, 0) * -14px), calc(var(--parallax, 0px) + var(--py, 0) * -10px), 0) scale(1.08);
+  will-change: transform; transition: transform .6s var(--ease-out);
+}
+.hero-copy.has-depth { transform: translate3d(calc(var(--px, 0) * 6px), calc(var(--py, 0) * 4px), 0); transition: transform .6s var(--ease-out); }
+/* Lumière douce qui suit le pointeur (aucune image ajoutée). */
+.hero::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: 0; transition: opacity .8s var(--ease);
+  background: radial-gradient(520px circle at var(--lx, 70%) var(--ly, 40%), rgba(127, 211, 245, .14), transparent 60%);
+}
+.hero.has-light::after { opacity: 1; }
+/* Entrée du hero : lignes du titre, accroche, actions, villes. */
+.lp.is-ready .hero h1 > span { animation: lp-line .95s var(--ease-out) both; }
+.lp.is-ready .hero h1 > span:nth-child(2) { animation-delay: .09s; }
+.lp.is-ready .hero h1 > span:nth-child(3) { animation-delay: .18s; }
+.lp.is-ready .hero .eyebrow { animation: lp-fade .8s var(--ease-out) both; }
+.lp.is-ready .hero .eyebrow::before { animation: lp-grow .9s var(--ease-out) .15s both; transform-origin: left; }
+.lp.is-ready .hero-lead { animation: lp-fade .9s var(--ease-out) .32s both; }
+.lp.is-ready .hero-actions { animation: lp-fade .9s var(--ease-out) .42s both; }
+.lp.is-ready .hero-foot { animation: lp-fade 1s var(--ease) .6s both; }
+@keyframes lp-line { from { opacity: 0; transform: translateY(32%); clip-path: inset(0 0 100% 0); } to { opacity: 1; transform: none; clip-path: inset(0 0 -20% 0); } }
+@keyframes lp-fade { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes lp-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* Boutons : reflet qui traverse au survol, appui net. */
+.btn { position: relative; overflow: hidden; isolation: isolate; transition: background-color .25s var(--ease), color .25s var(--ease), border-color .25s var(--ease), transform .2s var(--ease), box-shadow .25s var(--ease); }
+.btn::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, .38) 50%, transparent 70%);
+  transform: translateX(-120%); transition: transform .8s var(--ease-out);
+}
+.btn-primary::after { background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, .22) 50%, transparent 70%); }
+.btn:hover::after { transform: translateX(120%); }
+.btn:hover { box-shadow: 0 12px 26px -14px rgba(10, 31, 68, .5); }
+.btn:active { transform: translateY(1px) scale(.99); }
+
+/* Photos : parallaxe à l'intérieur de leur cadre. */
+[data-depth] { overflow: hidden; }
+[data-depth].has-depth img { transform: translate3d(0, var(--shift, 0px), 0) scale(1.1); will-change: transform; }
+.media-frame { position: relative; border-radius: var(--radius); background: #dfe5ec; }
+.media-frame img { display: block; }
+
+/* Cartes d'espace : perspective qui suit le pointeur, reflet discret. */
+[data-tilt] { transform-style: preserve-3d; }
+.space[data-tilt].is-tilting { transform: perspective(1400px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(-4px); transition: transform .12s linear, box-shadow .35s var(--ease); box-shadow: 0 30px 60px -30px rgba(10, 31, 68, .35); }
+[data-tilt]::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; opacity: 0; transition: opacity .35s var(--ease);
+  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, .16), transparent 55%);
+}
+.space { position: relative; }
+.space[data-tilt].is-tilting::after { opacity: 1; }
+
+/* Révélation au défilement : montée, netteté, sans saccade. */
+.reveal.is-pending { opacity: 0; transform: translateY(26px); filter: blur(4px); }
+.reveal.is-revealed { opacity: 1; transform: none; filter: none; transition: opacity .9s var(--ease-out), transform .9s var(--ease-out), filter .9s var(--ease-out); }
+
+/* Chaîne de valeur : un trait se dessine, une lueur le parcourt, chaque étape s'allume à son passage. */
+.steps::after {
+  content: ""; position: absolute; top: calc(var(--art-h) + var(--tick) - 3px); left: 10%; width: 90px; height: 7px; border-radius: 7px;
+  background: radial-gradient(closest-side, rgba(41, 168, 223, .9), rgba(41, 168, 223, 0)); opacity: 0; pointer-events: none;
+}
+.steps.is-flowing::after { animation: lp-flow 2.2s var(--ease-out) .25s both; }
+@keyframes lp-flow { 0% { opacity: 0; transform: translateX(-45px); } 12% { opacity: 1; } 88% { opacity: 1; } 100% { opacity: 0; transform: translateX(calc(var(--flow, 640px) - 45px)); } }
+.steps.is-flowing .step-num::before { animation: lp-dot .6s var(--ease-out) both; }
+.steps.is-flowing .step:nth-child(1) .step-num::before { animation-delay: .35s; }
+.steps.is-flowing .step:nth-child(2) .step-num::before { animation-delay: .75s; }
+.steps.is-flowing .step:nth-child(3) .step-num::before { animation-delay: 1.15s; }
+.steps.is-flowing .step:nth-child(4) .step-num::before { animation-delay: 1.55s; }
+.steps.is-flowing .step:nth-child(5) .step-num::before { animation-delay: 1.95s; }
+@keyframes lp-dot { 0% { transform: scale(.4); box-shadow: 0 0 0 0 rgba(41, 168, 223, .55); } 60% { transform: scale(1.35); box-shadow: 0 0 0 8px rgba(41, 168, 223, 0); } 100% { transform: none; box-shadow: none; } }
+.step-art { transition: transform .45s var(--ease-out); }
+.step-num::before { transition: transform .3s var(--ease-out), box-shadow .3s var(--ease); }
+@media (hover: hover) {
+  .step:hover .step-num::before { transform: scale(1.4); box-shadow: 0 0 0 6px rgba(41, 168, 223, .14); }
+  .step:hover h3 { color: var(--navy); }
+}
+
+/* Repères chiffrés : trait supérieur qui se trace une fois visibles. */
+.figures li { position: relative; border-top-color: #d5dce5; }
+.figures li::before { content: ""; position: absolute; left: 0; top: -2px; height: 2px; width: 100%; background: var(--navy); transform-origin: left; transition: transform 1.1s var(--ease-out); }
+.figures.is-pending li::before { transform: scaleX(0); }
+
+/* Transitions entre sections : fondu de fond plutôt qu'une coupure nette. */
+.spaces { background: linear-gradient(180deg, var(--white) 0, var(--mist) 140px, var(--mist) 100%); }
+.partnership { background: linear-gradient(180deg, var(--white) 0, var(--mist) 140px, var(--mist) 100%); }
+
+/* Appel à l'action : la trame textile glisse très lentement. */
+.cta::before { animation: lp-weave 60s linear infinite; }
+@keyframes lp-weave { to { background-position: 90px 90px, 90px 90px; } }
 
 /* ---------- Responsive ---------- */
 @media (max-width: 1180px) {
@@ -509,6 +608,10 @@ picture { display: contents; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
+  .hero-media.has-depth img, .hero-copy.has-depth, [data-depth].has-depth img, [data-tilt].is-tilting { transform: none !important; }
+  .reveal.is-pending { filter: none; }
+  .lp.is-ready .hero h1 > span, .lp.is-ready .hero .eyebrow, .lp.is-ready .hero-lead, .lp.is-ready .hero-actions, .lp.is-ready .hero-foot, .cta::before { animation: none; }
+  .btn::after { display: none; }
   *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
   .reveal.is-pending { opacity: 1; transform: none; }
   .steps.is-pending-line::before { transform: none; }
