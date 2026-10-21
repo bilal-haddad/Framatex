@@ -8,7 +8,7 @@ function renderQuality(){
  const flags=inspections.filter(x=>x.inspection).reduce((n,x)=>n+x.inspection.findings.filter(f=>f.type!=='inspection_limit').length,0);
  const docs=(state.detail?.folders||[]).filter(f=>f.can_read&&f.can_write).flatMap(f=>f.documents).filter(d=>d.latest);
  return `<section class="quality-root" aria-label="Contrôles de fiabilité">
-  <div class="section-heading workflow-head"><div><h2>Fiabilité documentaire</h2><small>Deux contrôles : cohérence inter-documents et intégrité des classeurs Excel</small></div><span class="tag">Version 0.4</span></div>
+  <div class="section-heading workflow-head"><div><h2>Fiabilité documentaire</h2><small>Deux contrôles : cohérence inter-documents et intégrité des classeurs Excel</small></div></div>
   <div class="workflow-stats"><div class="workflow-stat"><span>${results.length}</span><div>Règles consultables</div></div><div class="workflow-stat"><span>${differences}</span><div>Écarts non traités</div></div><div class="workflow-stat"><span>${flags}</span><div>Signaux Excel</div></div></div>
   <div class="quality-grid"><div class="panel quality-card">
     <div class="section-heading workflow-subheading"><h3>Cohérence entre documents</h3>${docs.length?`<button id="quality-add-data" class="secondary tiny">${icon('plus')} Relever une valeur</button>`:''}</div>

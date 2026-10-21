@@ -5,7 +5,7 @@ function renderPaper(){
  const docs=d.folders.filter(f=>f.can_read).flatMap(f=>f.documents);
  return `<section class="paper-section" aria-label="Papier et passeports numériques">
  <div class="section-heading workflow-head"><div><h2>Passerelle papier et passeports numériques</h2>
- <small>Étiquette QR du lancement · empreintes et provenance des versions</small></div><span class="tag">Version 0.6</span></div>
+ <small>Étiquette QR du lancement · empreintes et provenance des versions</small></div></div>
  <div class="panel paper-panel"><div><h3>Retrouver ce dossier depuis le papier</h3>
  <p>Imprimez une étiquette QR pour ce lancement. Après le scan, chaque personne doit se connecter et dispose uniquement de ses propres habilitations.</p>
  <button class="primary tiny" id="paper-qr">Voir l'étiquette QR</button></div><div><h3>Vérifier une version archivée</h3>

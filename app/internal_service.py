@@ -112,7 +112,8 @@ def launch_summary(db, user, launch):
             "definitive_ref": operations.definitive_ref if operations else None,
             "responsible_id": responsible.id if responsible else None,
             "responsible": responsible.name if responsible else None,
-            "completion": completion_summary(report), "folders": folders,
+            "completion": completion_summary(report), "phase": report["phase"],
+            "profile_name": report["profile_name"], "folders": folders,
             "alerts": len(impacts) + len(concerns), "unacknowledged_changes": len(impacts),
             "inconsistencies": concerns, "last_activity": max(timestamps)}
 

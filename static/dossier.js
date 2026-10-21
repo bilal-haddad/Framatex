@@ -455,6 +455,7 @@ function djBind() {
   bindCompleteness(); bindWorkflow(); bindQuality(); bindIntake(); bindPaper(); bindSpec(); bindMail();
   bindImpactSimulation(); bindOrliReconciliation(); bindMaterialReport(); bindApprovals(); bindSharing();
   djAnnotateExcelFindings();
+  djConsolidateNotes();
   if (state.dj.highlight) {
     const row = app.querySelector(`.dj-row[data-rule="${CSS.escape(state.dj.highlight)}"]`);
     if (row) {
@@ -465,6 +466,25 @@ function djBind() {
     }
     state.dj.highlight = null;
   }
+}
+
+// Les précautions d'usage restent disponibles, regroupées dans une note « À savoir »
+// repliée par module, au lieu d'être répétées en tête de chaque bloc.
+const DJ_NOTE = /\b(aucun|aucune|ne remplac|ne garanti|n[’']équivalent|ne prouvent|jamais|il ne s[’']agit|servent à tester|pas des erreurs|uniquement|doivent être relevées|seules les versions|méritent une vérification)/i;
+function djConsolidateNotes() {
+  app.querySelectorAll('.dj-module').forEach(module => {
+    if (module.querySelector(':scope > .dj-help')) return;
+    const notes = [...module.querySelectorAll('p, .ops-muted, .notice')].filter(el =>
+      !el.closest('table, form, li, button, label, .ops-empty, .empty, .dj-empty, details, .modal')
+      && !el.querySelector('button, input, select, textarea, a')
+      && el.textContent.trim().length >= 70 && DJ_NOTE.test(el.textContent));
+    if (!notes.length) return;
+    const help = document.createElement('details');
+    help.className = 'dj-help';
+    help.innerHTML = `<summary>${icon('info')} À savoir sur ce contrôle</summary><div class="dj-help-body"></div>`;
+    notes.forEach(note => help.lastElementChild.appendChild(note));
+    module.appendChild(help);
+  });
 }
 
 function djAnnotateExcelFindings() {

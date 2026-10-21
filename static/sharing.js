@@ -12,7 +12,7 @@ function renderSharing(){
      .map(doc=>({doc,folder:f.slug})));
  const canCreateSupplier=d.folders.some(f=>f.can_write && ['jaune','rose'].includes(f.slug));
  return `<section class="sharing-section" id="sharing-workspace">
-  <div class="section-heading"><div><h2>Échanges documentaires</h2><small>Version 0.14 · simulation interne, aucun accès externe</small></div></div>
+  <div class="section-heading"><div><h2>Échanges documentaires</h2><small>Partages internes simulés : aucun accès externe n’est ouvert</small></div></div>
   <div class="sharing-grid">
    <article class="panel sharing-card"><div class="sharing-card-head"><div><h3>Publication client</h3><p>Seules les versions autorisées et validées peuvent apparaître dans l’aperçu.</p></div><span class="tag orange">Interne</span></div>
     <div class="sharing-meta"><strong>${pub.items.filter(x=>x.effective).length}</strong> publication(s) effectivement visible(s) dans la simulation${d.client_name?' · '+e(d.client_name):' · client non renseigné'}</div>

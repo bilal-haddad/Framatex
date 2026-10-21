@@ -7,7 +7,7 @@ function renderMail(){
  const data=state.mailReport||{emails:[],commitments:[],can_import:false,can_review:false};
  const statuses={pending:'En attente',done:'Réalisé',postponed:'Reporté',cancelled:'Annulé'};
  return `<section class="mail-section" aria-label="Courriels et engagements">
-  <div class="section-heading workflow-head"><div><h2>Emails et engagements</h2><small>Archives .eml · obligations proposées et confirmées par un utilisateur</small></div><span class="tag">Version 0.8</span></div>
+  <div class="section-heading workflow-head"><div><h2>Emails et engagements</h2><small>Archives .eml · obligations proposées et confirmées par un utilisateur</small></div></div>
   <div class="mail-stats"><div class="mail-stat"><strong>${data.emails.length}</strong><span>Messages archivés</span></div><div class="mail-stat"><strong>${data.commitments.filter(x=>x.status==='pending').length}</strong><span>Engagements en attente</span></div><div class="mail-stat"><strong>${data.commitments.filter(x=>x.status==='done').length}</strong><span>Engagements réalisés</span></div></div>
   <div class="mail-notice">Les emails proviennent uniquement des fichiers .eml déposés volontairement. Les pièces jointes restent dans le fichier d’origine. Aucun engagement n’est créé ni exécuté automatiquement.</div>
   <div class="mail-cols"><div><div class="section-heading"><h3>Courriels du lancement</h3>${data.can_import?`<button class="primary tiny" id="mail-import">${icon('plus')} Importer un email</button>`:''}</div>
