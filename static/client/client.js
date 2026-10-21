@@ -535,6 +535,7 @@ async function viewRequests() {
   const body = app.querySelector('#requests-body');
   let items;
   try { items = await source.listOrderRequests(); } catch (err) { handleScreenError(err, body); return; }
+  const pending = source.listDocumentRequests ? source.listDocumentRequests().catch(() => null) : Promise.resolve(null);
   if (!items.length) {
     body.innerHTML = emptyState({
       title: 'Vous n’avez encore aucune demande de commande.',
@@ -543,7 +544,18 @@ async function viewRequests() {
     });
     return;
   }
-  body.innerHTML = `<div class="table-card">
+  const inProgress = items.filter(r => ['draft', 'submitted', 'under_review'].includes(r.status)).length;
+  const accepted = items.filter(r => r.status === 'accepted').length;
+  const who = state.client?.nom_contact || state.client?.raison_sociale || '';
+  body.innerHTML = `<section class="welcome-band" aria-label="Synthèse de vos demandes">
+      <div class="welcome-copy"><p class="eyebrow">Bonjour${who ? '' : ' !'}</p>${who ? `<h2>${esc(who)}</h2>` : ''}<p>Voici où en sont vos demandes et vos documents.</p></div>
+      <ul class="welcome-stats">
+        <li><strong>${inProgress}</strong><span>demande${inProgress > 1 ? 's' : ''} en cours</span></li>
+        <li><strong>${accepted}</strong><span>acceptée${accepted > 1 ? 's' : ''}</span></li>
+        <li><a href="#/documents-demandes"><strong data-welcome-pending>—</strong><span>pièce(s) à fournir</span></a></li>
+      </ul>
+    </section>
+    <div class="table-card">
       <div class="req-head" aria-hidden="true"><span>Demande</span><span>Réf. client</span><span>Quantité</span><span>Date souhaitée</span><span>Créée le</span><span>Statut</span><span></span></div>
       <ul class="req-list">${items.map(r => `
         <li><a class="req-row" href="#/demandes/${encodeURIComponent(r.id)}">
@@ -556,6 +568,19 @@ async function viewRequests() {
           ${icon('arrow', 'ico req-chevron')}
         </a></li>`).join('')}
       </ul></div>`;
+  const docs = await pending;
+  const slot = body.querySelector('[data-welcome-pending]');
+  if (slot) slot.textContent = docs ? String(docs.filter(item => PENDING_DOC.has(item.status)).length) : '—';
+}
+
+// Frise d'avancement d'une demande : Brouillon → Envoyée → En cours d'étude → Acceptée (ou Refusée).
+function statusSteps(status) {
+  const final = status === 'rejected' ? ['rejected', 'Refusée'] : ['accepted', 'Acceptée'];
+  const steps = [['draft', 'Brouillon'], ['submitted', 'Envoyée'], ['under_review', 'En cours d’étude'], final];
+  const current = {draft: 0, submitted: 1, under_review: 2, accepted: 3, rejected: 3}[status] ?? 0;
+  return `<ol class="status-steps" aria-label="Avancement de la demande">${steps.map(([key, label], i) => `
+    <li class="status-step${i < current ? ' is-done' : ''}${i === current ? ' is-current' : ''}${key === 'rejected' ? ' is-rejected' : ''}"${i === current ? ' aria-current="step"' : ''}>
+      <span class="status-dot" aria-hidden="true"></span><span class="status-label">${label}</span></li>`).join('')}</ol>`;
 }
 
 // --------------------------------------------------------------------------
@@ -804,6 +829,7 @@ async function viewRequestDetail({ id }) {
         <h1 tabindex="-1">${esc(r.article)}</h1>
         <div class="page-actions">${statusBadge(r.status)}</div>
       </div>
+      ${statusSteps(r.status)}
     </div>
     <div class="detail-grid">
       <div class="detail-main">

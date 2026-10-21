@@ -1,0 +1,111 @@
+/* =============================================================================
+   Espace FRAMATEX — finition premium.
+   Chargée en dernier, présentation uniquement : profondeur légère des cartes,
+   boutons plus nets, transitions de vue courtes, signature textile discrète
+   (trame et ruban aux quatre couleurs des sous-dossiers). Aucune règle de logique.
+   ============================================================================= */
+:root {
+  --fx-shadow-soft: 0 1px 2px rgba(10, 31, 68, .04), 0 10px 28px -18px rgba(10, 31, 68, .22);
+  --fx-shadow-lift: 0 2px 4px rgba(10, 31, 68, .05), 0 18px 38px -20px rgba(10, 31, 68, .34);
+  --fx-radius-card: 14px;
+  --fx-weave: repeating-linear-gradient(0deg, rgba(14, 42, 90, .07) 0 1px, transparent 1px 7px),
+              repeating-linear-gradient(90deg, rgba(14, 42, 90, .07) 0 1px, transparent 1px 7px);
+  --fx-ribbon: linear-gradient(90deg, var(--fx-folder-jaune) 0 25%, var(--fx-folder-rose) 25% 50%, var(--fx-folder-bleu) 50% 75%, var(--fx-folder-vert) 75% 100%);
+}
+
+/* ---------- Transitions de vue (classe posée par premium.js au changement d'écran) ---------- */
+.content.fx-enter > *, .content.fx-enter > .dj > * { animation: fx-view-in .42s var(--fx-ease) both; }
+.content.fx-enter > .dj > *:nth-child(2) { animation-delay: .04s; }
+.content.fx-enter > .dj > *:nth-child(3) { animation-delay: .08s; }
+.content.fx-enter > .dj > *:nth-child(4) { animation-delay: .12s; }
+.content.fx-enter > .dj > *:nth-child(5) { animation-delay: .16s; }
+.content.fx-enter > .dj > *:nth-child(n+6) { animation-delay: .2s; }
+@keyframes fx-view-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* ---------- Coque : barre latérale, ruban textile, barre supérieure ---------- */
+.sidebar { background: linear-gradient(180deg, var(--fx-white) 0%, #fbfcfe 100%); }
+.sidebar > .brand { position: relative; }
+.sidebar > .brand::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; border-radius: 3px;
+  background: var(--fx-ribbon); opacity: .55;
+}
+.nav-btn { transition: background-color .2s var(--fx-ease), color .2s var(--fx-ease); }
+.nav-btn svg { transition: transform .25s var(--fx-ease), color .2s var(--fx-ease); }
+.nav-btn:hover svg { transform: translateX(2px); color: var(--fx-navy); }
+.nav-btn.active { background: linear-gradient(90deg, var(--fx-tint) 0%, rgba(237, 244, 252, .35) 100%); }
+.app-shell.fx-enter .nav-btn.active::before { animation: fx-grow-y .35s var(--fx-ease) both; }
+@keyframes fx-grow-y { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.topbar { position: sticky; top: 0; z-index: 40; background: rgba(255, 255, 255, .88); -webkit-backdrop-filter: saturate(140%) blur(10px); backdrop-filter: saturate(140%) blur(10px); }
+
+/* ---------- En-têtes de page : carte claire, trame textile en fond ---------- */
+.ops-heading {
+  position: relative; overflow: hidden; isolation: isolate;
+  padding: 22px 26px; border: 1px solid var(--fx-line); border-radius: var(--fx-radius-card);
+  background: var(--fx-white); box-shadow: var(--fx-shadow-soft);
+}
+.ops-heading::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: var(--fx-weave);
+  -webkit-mask-image: linear-gradient(90deg, transparent 45%, #000 100%); mask-image: linear-gradient(90deg, transparent 45%, #000 100%);
+}
+.ops-heading::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; opacity: .8;
+  background: linear-gradient(180deg, var(--fx-folder-jaune) 0 25%, var(--fx-folder-rose) 25% 50%, var(--fx-folder-bleu) 50% 75%, var(--fx-folder-vert) 75% 100%);
+}
+.dj .dj-eyebrow { display: inline-flex; align-items: center; gap: 10px; }
+.dj .dj-eyebrow::after { content: ""; width: 44px; height: 3px; border-radius: 3px; background: var(--fx-ribbon); opacity: .8; }
+
+/* ---------- Cartes et panneaux ---------- */
+.ops-panel, .panel, .dj-summary, .dj .dj-docs, .dj-dash .dash-panel, .ops-table-wrap {
+  border-color: #e3e8ef; border-radius: var(--fx-radius-card); box-shadow: var(--fx-shadow-soft);
+}
+.dj-summary { position: relative; overflow: hidden; isolation: isolate; }
+.dj-summary::after {
+  content: ""; position: absolute; top: 0; right: 0; width: 38%; height: 100%; z-index: -1; pointer-events: none; background: var(--fx-weave);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 85%); mask-image: linear-gradient(90deg, transparent, #000 85%); opacity: .7;
+}
+.ops-kpi, .dj-dash .dash-kpi { border-radius: 12px; transition: transform .22s var(--fx-ease), box-shadow .22s var(--fx-ease), border-color .22s var(--fx-ease); }
+.dj-dash .dash-kpi:hover { transform: translateY(-3px); box-shadow: var(--fx-shadow-lift); border-color: var(--fx-line-strong); }
+.dj .dj-folder { border-radius: var(--fx-radius-card); transition: transform .22s var(--fx-ease), box-shadow .22s var(--fx-ease), border-color .22s var(--fx-ease), background-color .22s var(--fx-ease); }
+.dj .dj-folder:hover { transform: translateY(-3px); box-shadow: var(--fx-shadow-lift); }
+.dj .dj-folder.selected { background: linear-gradient(180deg, #f6f9fd 0%, var(--fx-white) 70%); box-shadow: 0 0 0 1px var(--fx-navy), var(--fx-shadow-lift); }
+.dj .dj-folder:hover .dj-ring { transform: rotate(-90deg) scale(1.06); }
+.dj-ring { transition: transform .3s var(--fx-ease); }
+
+/* ---------- Boutons : relief léger, réponse au clic ---------- */
+.primary {
+  background: linear-gradient(180deg, #16386f 0%, var(--fx-navy) 100%); border-color: var(--fx-navy);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 8px 18px -12px rgba(10, 31, 68, .6);
+  transition: background .2s var(--fx-ease), box-shadow .2s var(--fx-ease), transform .15s var(--fx-ease);
+}
+.primary:hover { background: linear-gradient(180deg, #1d4f91 0%, #12346a 100%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), 0 12px 24px -12px rgba(10, 31, 68, .65); transform: translateY(-1px); }
+.primary:active, .secondary:active { transform: translateY(0) scale(.985); }
+.secondary { transition: border-color .2s var(--fx-ease), color .2s var(--fx-ease), box-shadow .2s var(--fx-ease), background-color .2s var(--fx-ease), transform .15s var(--fx-ease); }
+.secondary:hover { border-color: var(--fx-navy); color: var(--fx-navy); box-shadow: 0 6px 14px -10px rgba(10, 31, 68, .45); }
+.primary:disabled, .secondary:disabled { transform: none; box-shadow: none; }
+
+/* ---------- États et tableaux ---------- */
+.dj-state { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7); }
+.dj-row td { transition: background-color .2s var(--fx-ease); }
+.dj-row:hover td { background: #f7f9fc; }
+.dj .dj-tab::after { transition: background .2s var(--fx-ease), transform .25s var(--fx-ease); transform: scaleX(.4); }
+.dj .dj-tab[aria-selected="true"]::after { transform: scaleX(1); }
+
+/* ---------- Modales : fond flouté, carte plus douce ---------- */
+.modal-scrim { background: rgba(10, 31, 68, .42); -webkit-backdrop-filter: blur(6px) saturate(120%); backdrop-filter: blur(6px) saturate(120%); }
+.modal { border-radius: 16px; box-shadow: 0 30px 80px -24px rgba(10, 31, 68, .5); }
+.modal-head { background: linear-gradient(180deg, #fbfcfe 0%, var(--fx-white) 100%); }
+
+/* ---------- Connexion : entrée douce du formulaire et du titre ---------- */
+.login-form { animation: fx-view-in .55s var(--fx-ease) .1s both; }
+.login-hero > * { animation: fx-view-in .7s var(--fx-ease) both; }
+.login-hero > *:nth-child(2) { animation-delay: .08s; }
+.login-hero > *:nth-child(3) { animation-delay: .16s; }
+
+@media (max-width: 760px) {
+  .ops-heading { padding: 16px 16px 16px 18px; }
+  .dj-summary::after, .ops-heading::after { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .content.fx-enter > *, .content.fx-enter > .dj > *, .login-form, .login-hero > *, .app-shell.fx-enter .nav-btn.active::before { animation: none; }
+  .dj-dash .dash-kpi:hover, .dj .dj-folder:hover, .primary:hover, .primary:active, .secondary:active { transform: none; }
+}
