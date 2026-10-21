@@ -31,7 +31,7 @@ def test_framatex_space_serves_existing_internal_app():
         page = client.get('/espace-framatex')
         assert page.status_code == 200
         _assert_security_headers(page)
-        assert page.text == (ROOT / 'static/index.html').read_text()
+        assert page.content == (ROOT / 'static/index.html').read_bytes()
         assert '/assets/app.js' in page.text
 
 
