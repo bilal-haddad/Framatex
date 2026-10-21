@@ -65,7 +65,7 @@ WEB_MIME_TYPES = {
     ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
     ".json": "application/json", ".svg": "image/svg+xml", ".webp": "image/webp",
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-    ".woff2": "font/woff2", ".woff": "font/woff", ".txt": "text/plain",
+    ".avif": "image/avif", ".woff2": "font/woff2", ".woff": "font/woff", ".txt": "text/plain",
 }
 
 

@@ -372,6 +372,52 @@ address { font-style: normal; }
 .reveal.is-pending { opacity: 0; transform: translateY(14px); }
 .reveal.is-revealed { opacity: 1; transform: none; transition: opacity .7s var(--ease), transform .7s var(--ease); }
 
+/* ---------- Ordre final : fonds alternés ---------- */
+picture { display: contents; }
+.solution { background: var(--white); }
+.spaces { background: var(--mist); }
+
+/* ---------- Repères chiffrés (valeurs réelles, animées une fois) ---------- */
+.figures { list-style: none; margin: 40px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px 24px; }
+.figures li { display: grid; align-content: start; gap: 8px; padding-top: 16px; border-top: 2px solid var(--navy); }
+.figures strong { font-family: var(--font-display); font-size: clamp(34px, 3vw, 44px); line-height: 1; font-weight: 700; color: var(--navy); font-variant-numeric: tabular-nums; }
+.figures span { font-size: 14px; line-height: 1.45; color: var(--muted); }
+
+/* ---------- Profondeur au survol ---------- */
+.space { transition: transform .35s var(--ease), box-shadow .35s var(--ease); }
+.space-media img { transition: transform .9s var(--ease); }
+.step-art img { transition: transform .35s var(--ease); }
+@media (hover: hover) {
+  .space:hover { transform: translateY(-4px); box-shadow: 0 24px 48px rgba(14, 42, 90, .12); }
+  .space:hover .space-media img { transform: scale(1.03); }
+  .step:hover .step-art img { transform: translateY(-4px); }
+}
+
+/* ---------- Parallaxe du hero (activée par landing.js hors mouvement réduit) ---------- */
+.hero-media.has-parallax img { transform: translate3d(0, var(--parallax, 0px), 0) scale(1.06); will-change: transform; }
+
+/* ---------- Chaîne de valeur : trait qui se dessine, étapes décalées ---------- */
+.steps::before { transform-origin: left center; transition: transform 1.4s var(--ease); }
+.steps.is-pending-line::before { transform: scaleX(0); }
+.step.reveal.is-revealed:nth-child(2) { transition-delay: .09s; }
+.step.reveal.is-revealed:nth-child(3) { transition-delay: .18s; }
+.step.reveal.is-revealed:nth-child(4) { transition-delay: .27s; }
+.step.reveal.is-revealed:nth-child(5) { transition-delay: .36s; }
+
+/* ---------- Appel à l'action ---------- */
+.cta { position: relative; overflow: hidden; background: var(--navy); color: rgba(255, 255, 255, .8); padding: clamp(64px, 7vw, 104px) 0; }
+/* Trame discrète, évocation d'un tissage. */
+.cta::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .07;
+  background-image: repeating-linear-gradient(0deg, #fff 0 1px, transparent 1px 9px), repeating-linear-gradient(90deg, #fff 0 1px, transparent 1px 9px);
+  mask-image: linear-gradient(90deg, transparent 30%, #000 100%); -webkit-mask-image: linear-gradient(90deg, transparent 30%, #000 100%);
+}
+.cta-inner { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 32px 56px; flex-wrap: wrap; }
+.cta h2 { color: var(--white); font-size: clamp(26px, 2.6vw, 36px); line-height: 1.2; letter-spacing: -.02em; max-width: 680px; text-wrap: balance; margin-top: 14px; }
+.cta-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.btn-outline-light { background: transparent; color: var(--white); border-color: rgba(255, 255, 255, .5); }
+.btn-outline-light:hover { background: var(--white); color: var(--navy); border-color: var(--white); }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1180px) {
   .hero-media img { object-position: 45% center; }
@@ -443,6 +489,8 @@ address { font-style: normal; }
   .space-cta { align-self: stretch; gap: 10px; padding: 14px 16px; font-size: 11.5px; letter-spacing: .08em; }
   .step-art.is-missing > .step-placeholder { padding: 6px; font-size: 8.5px; letter-spacing: .02em; }
   .pillar { grid-template-columns: 1fr; }
+  .figures { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 16px; }
+  .cta-actions { width: 100%; flex-direction: column; }
   .pillar dt { padding-top: 0; }
   .value-chain { --art-h: 72px; }
   .steps { flex-direction: column; gap: 0; }
@@ -463,4 +511,7 @@ address { font-style: normal; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
   .reveal.is-pending { opacity: 1; transform: none; }
+  .steps.is-pending-line::before { transform: none; }
+  .hero-media.has-parallax img { transform: none; }
+  .space:hover, .space:hover .space-media img, .step:hover .step-art img { transform: none; }
 }
