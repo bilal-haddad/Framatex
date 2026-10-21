@@ -121,6 +121,8 @@ def open_launch_for_order(order_id: str, response: Response,
     db.add(LaunchOperations(launch_id=launch.id, article=order.article[:180], quantity=order.quantite,
                             responsible_id=user.id))
     db.add(ClientOrderLaunch(order_request_id=order.id, launch_id=launch.id, created_by=user.id))
+    from .standard_profile import apply_standard_profile
+    apply_standard_profile(db, launch, user, reason="client_order")
     audit(db, user, "launch.create", "launch", launch.id,
           {"name": launch.name, "orli": None, "client_order_request": order.request_number})
     add_audit(db, user.id, "client.order_request.launch_created", "client_order_request", order.id,

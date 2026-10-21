@@ -171,6 +171,7 @@ class LaunchPayload(BaseModel):
     client_name: str | None = Field(default=None, max_length=150)
     order_ref: str | None = Field(default=None, max_length=100)
     orli_ref: str | None = Field(default=None, max_length=100)
+    standard_profile: bool = False   # applique « Dossier Jaune FRAMATEX standard », étape Préparation
 
 class LaunchPatch(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=180)
@@ -285,6 +286,9 @@ def create_launch(payload: LaunchPayload, user: User = Depends(get_current_user)
     for slug, label in FOLDERS:
         db.add(Folder(launch_id=l.id, slug=slug, label=label))
     audit(db, user, "launch.create", "launch", l.id, {"name": l.name, "orli": l.orli_ref})
+    if payload.standard_profile:
+        from .standard_profile import apply_standard_profile
+        apply_standard_profile(db, l, user, reason="launch_create")
     db.commit()
     return launch_out(l)
 
@@ -545,12 +549,14 @@ class RequirementPayload(BaseModel):
     document_type: str = Field(min_length=2, max_length=100)
     due_phase: str = "preparation"
     requires_validation: bool = False
+    required: bool = True
     guidance: str = Field(default="", max_length=1600)
 
 class RequirementPatch(BaseModel):
     title: str | None = Field(default=None, min_length=3, max_length=160)
     due_phase: str | None = None
     requires_validation: bool | None = None
+    required: bool | None = None
     guidance: str | None = Field(default=None, max_length=1600)
     active: bool | None = None
 
@@ -569,7 +575,7 @@ class ExceptionPayload(BaseModel):
 def rule_out(r: RequirementRule):
     return {"id": r.id, "title": r.title, "folder": r.folder_slug,
             "document_type": r.document_type, "due_phase": r.due_phase,
-            "requires_validation": r.requires_validation, "active": r.active,
+            "requires_validation": r.requires_validation, "active": r.active, "required": r.required,
             "guidance": r.guidance}
 
 
@@ -618,7 +624,8 @@ def add_requirement(profile_id: str, payload: RequirementPayload, user: User = D
         raise HTTPException(404, "Profil introuvable")
     rule = RequirementRule(profile_id=profile.id, title=payload.title.strip(), folder_slug=payload.folder,
                            document_type=payload.document_type.strip(), due_phase=payload.due_phase,
-                           requires_validation=payload.requires_validation, guidance=payload.guidance.strip())
+                           requires_validation=payload.requires_validation, required=payload.required,
+                           guidance=payload.guidance.strip())
     db.add(rule)
     try:
         db.flush()
@@ -664,6 +671,18 @@ def set_completeness_context(launch_id: str, payload: ContextPayload, user: User
     context.profile_id, context.phase = payload.profile_id, payload.phase
     audit(db, user, "completeness.context.update", "launch", launch.id,
           {"profile": payload.profile_id, "phase": payload.phase})
+    db.commit()
+    return evaluate(db, launch, user, permitted)
+
+
+@app.post("/api/launches/{launch_id}/completeness/standard")
+def apply_standard_completeness(launch_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Dossier sans profil : applique la checklist standard (étape Préparation)."""
+    from .standard_profile import apply_standard_profile
+    must(user, "launch.update")
+    launch = get_launch(db, launch_id)
+    if not apply_standard_profile(db, launch, user, reason="manual"):
+        raise HTTPException(409, "Ce dossier a déjà un profil : modifiez-le avec « Profil et étape »")
     db.commit()
     return evaluate(db, launch, user, permitted)
 

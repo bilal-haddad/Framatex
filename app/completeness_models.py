@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .core import Base, utcnow
 from .models import uid
@@ -29,6 +29,9 @@ class RequirementRule(Base):
     due_phase: Mapped[str] = mapped_column(String(30))
     requires_validation: Mapped[bool] = mapped_column(Boolean, default=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Pièce facultative (emails, avoir si nécessaire) : affichée dans la checklist,
+    # jamais comptée manquante ; absente, elle reste « Non exigible ».
+    required: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     guidance: Mapped[str] = mapped_column(Text, default="")
     profile: Mapped[CompletenessProfile] = relationship(back_populates="rules")
 

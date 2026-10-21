@@ -129,6 +129,7 @@ def dashboard(user: User = Depends(get_current_user), db: Session = Depends(get_
     active = [row for row in summaries if row["status"] != "Clôturé"]
     pending = sum(f.get("pending_validation", 0) for row in active for f in row["folders"])
     missing = [{"launch_id": row["id"], "launch_name": row["name"], "order_ref": row["order_ref"],
+                "client_name": row["client_name"], "article": row["article"],
                 "folder": f["slug"], **requirement}
                for row in active for f in row["folders"] for requirement in f.get("requirements", [])
                if requirement["status"] == "missing"]

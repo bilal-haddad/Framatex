@@ -30,6 +30,7 @@ MODULES = {
     'python_multipart|multipart': 'python-multipart', 'argon2': 'argon2-cffi', 'jwt': 'PyJWT',
     'pydantic': 'pydantic', 'openpyxl': 'openpyxl', 'pypdf': 'pypdf', 'docx': 'python-docx',
     'PIL': 'Pillow', 'pytesseract': 'pytesseract', 'fitz': 'PyMuPDF', 'qrcode': 'qrcode',
+    'tzdata': 'tzdata',  # fuseau Africa/Casablanca sous Windows
 }
 if os.name == 'nt':
     MODULES['psutil'] = 'psutil'

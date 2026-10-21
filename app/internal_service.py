@@ -19,8 +19,9 @@ DOCUMENT_TYPES = {
               "Lancement définitif", "Fiche d’emploi", "Calcul du besoin", "Fiche de prix",
               "Tests tissu", "Excel BE", "Email", "Autre"],
     "rose": ["Bon de livraison", "Bon de réception", "Document réception", "Email", "Autre"],
-    "bleu": ["Pièce douanière", "Justificatif import/export", "Document transit", "Document transport", "Autre"],
-    "vert": ["Facture", "Document facturation", "Justificatif facturation", "Autre"],
+    "bleu": ["Pièce douanière", "Justificatif import/export", "Document transit", "Document transport",
+             "Justificatif de dédouanement", "Autre"],
+    "vert": ["Facture", "Document facturation", "Justificatif facturation", "Avoir / correction de facture", "Autre"],
 }
 
 

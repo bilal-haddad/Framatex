@@ -28,7 +28,8 @@ MIGRATION_TABLE = Table('schema_migrations', Base.metadata,
                         Column('applied_at', String(50), nullable=False), extend_existing=True)
 
 REVISIONS = ('0001_baseline', '0002_launch_scope', '0003_pilot_reports', '0004_client_space',
-             '0005_internal_operations', '0006_client_workflow', '0007_client_order_launch')
+             '0005_internal_operations', '0006_client_workflow', '0007_client_order_launch',
+             '0008_optional_rules')
 
 
 def _versions(conn):
@@ -118,6 +119,12 @@ def migrate():
             Base.metadata.tables['client_order_launches'].create(bind=conn, checkfirst=True)
             conn.execute(text('INSERT INTO schema_migrations VALUES (:v, :d)'),
                          {'v':'0007_client_order_launch','d':datetime.now(timezone.utc).isoformat()})
+        if '0008_optional_rules' not in done:
+            # Additif : une règle peut être facultative ; toutes les règles existantes restent obligatoires.
+            if 'required' not in {c['name'] for c in inspect(conn).get_columns('completeness_rules')}:
+                conn.execute(text('ALTER TABLE completeness_rules ADD COLUMN required BOOLEAN NOT NULL DEFAULT 1'))
+            conn.execute(text('INSERT INTO schema_migrations VALUES (:v, :d)'),
+                         {'v':'0008_optional_rules','d':datetime.now(timezone.utc).isoformat()})
         # Defensive consistency check: pre-0.15 historical tables stay untouched.
         cols = {c['name'] for c in inspect(conn).get_columns('launches')}
         if 'restricted' not in cols or 'launch_members' not in inspect(conn).get_table_names():

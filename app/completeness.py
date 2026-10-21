@@ -62,7 +62,7 @@ def evaluate(db: Session, launch: Launch, user, permitted):
             RequirementException.launch_id == launch.id, RequirementException.rule_id == rule.id,
             RequirementException.active.is_(True)
         ))
-        due = PHASE_RANK[phase] >= PHASE_RANK[rule.due_phase]
+        due = rule.required and PHASE_RANK[phase] >= PHASE_RANK[rule.due_phase]
         if candidates and (not rule.requires_validation or any(v.id in validated for _, v in candidates)):
             status = "present"
         elif candidates:
@@ -76,7 +76,8 @@ def evaluate(db: Session, launch: Launch, user, permitted):
         rows.append({
             "id": rule.id, "title": rule.title, "folder": rule.folder_slug,
             "document_type": rule.document_type, "due_phase": rule.due_phase,
-            "requires_validation": rule.requires_validation, "guidance": rule.guidance,
+            "requires_validation": rule.requires_validation, "required": rule.required,
+            "guidance": rule.guidance,
             "due": due, "status": status,
             "exception_reason": exception.reason if exception and status == "exception" else None,
             "documents": [{"id": doc.id, "title": doc.title, "version": version.number,

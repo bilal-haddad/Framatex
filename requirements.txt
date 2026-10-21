@@ -13,3 +13,5 @@ pytesseract>=0.3.10,<1
 PyMuPDF>=1.24,<2
 qrcode>=7.4,<9
 psutil>=6,<8; sys_platform == 'win32'
+# Base des fuseaux horaires : absente de Windows (ZoneInfo « Africa/Casablanca »).
+tzdata>=2024.1
