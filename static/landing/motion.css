@@ -1,0 +1,137 @@
+/* Landing only. Existing layout, official photos, logo, routes and text stay intact.
+   One composed transform per surface: reveal / tilt / parallax cannot overwrite
+   one another. Bounded overscan keeps moving photos inside their fixed frames. */
+.lp.motion-enabled .hero { perspective: 1200px; }
+.lp.motion-enabled .hero-media { inset: -32px; }
+.lp.motion-enabled .hero-media img {
+  transform: perspective(1200px)
+    translate3d(calc(var(--hero-x, 0) * 26px), calc(var(--hero-y, 0) * 18px + var(--hero-scroll, 0px)), 32px)
+    rotateX(calc(var(--hero-y, 0) * -4deg)) rotateY(calc(var(--hero-x, 0) * 6deg))
+    scale(calc(1.14 + var(--hero-hover, 0) * .008));
+  transition: none;
+}
+.lp.motion-enabled .hero-copy {
+  transform: perspective(1200px) translate3d(calc(var(--hero-x, 0) * 6px), calc(var(--hero-y, 0) * 4px), 12px)
+    rotateX(calc(var(--hero-y, 0) * -.35deg)) rotateY(calc(var(--hero-x, 0) * .45deg));
+}
+.hero-weave { display: none; }
+.lp.motion-enabled .hero-weave {
+  display: block; position: absolute; top: 8%; right: -2%; width: 42%; height: 82%;
+  z-index: -1; pointer-events: none; opacity: .075;
+  background-image: repeating-linear-gradient(0deg, #d9e6ee 0 1px, transparent 1px 28px),
+    repeating-linear-gradient(90deg, #d9e6ee 0 1px, transparent 1px 28px);
+  mask-image: radial-gradient(ellipse, #000, transparent 70%);
+  transform: perspective(1200px) translate3d(calc(var(--hero-x, 0) * -8px), calc(var(--hero-y, 0) * -6px), -36px)
+    rotateY(calc(var(--hero-x, 0) * -2deg)) scale(1.06);
+}
+.lp.motion-enabled .hero::after {
+  background: radial-gradient(ellipse at 68% 42%, rgba(185, 214, 233, .16), transparent 52%);
+  opacity: var(--hero-hover, 0);
+  transform: translate3d(calc(var(--hero-x, 0) * -16px), calc(var(--hero-y, 0) * -10px), 0);
+  transition: none;
+}
+
+/* A restrained cinematic entry; text and photo use independent delays. */
+.lp.motion-enabled .reveal {
+  --enter-y: 0px; --enter-z: 0px; --enter-rx: 0deg; --enter-scale: 1;
+  opacity: 1; filter: none;
+  transform: perspective(1200px) translate3d(0, var(--enter-y), var(--enter-z)) rotateX(var(--enter-rx)) scale(var(--enter-scale));
+  transition: transform .9s cubic-bezier(.18,.7,.25,1), opacity .75s ease;
+  transition-delay: var(--reveal-delay, 0s);
+}
+.lp.motion-enabled .reveal.is-pending {
+  --enter-y: 44px; --enter-z: -70px; --enter-rx: 2deg; --enter-scale: .965;
+  opacity: 0; filter: none;
+}
+.lp.motion-enabled .reveal.is-entering { will-change: transform, opacity; }
+.lp.motion-enabled .reveal:focus-within {
+  --enter-y: 0px; --enter-z: 0px; --enter-rx: 0deg; --enter-scale: 1; opacity: 1;
+}
+.lp.motion-enabled .is-motion-visible.hero .hero-media img,
+.lp.motion-enabled [data-depth].is-motion-visible img { will-change: transform; }
+
+/* The card rotates, its photo has a separate local offset, its frame stays clipped. */
+.lp.motion-enabled .space[data-tilt] {
+  transform-style: preserve-3d;
+  transform: perspective(1100px) translate3d(0, calc(var(--enter-y, 0px) + var(--card-lift, 0px)), var(--enter-z, 0px))
+    rotateX(calc(var(--enter-rx, 0deg) + var(--card-rx, 0deg))) rotateY(var(--card-ry, 0deg))
+    scale(calc(var(--enter-scale, 1) * var(--card-scale, 1)));
+  transition: transform .9s cubic-bezier(.18,.7,.25,1), opacity .75s ease, box-shadow .28s ease;
+  box-shadow: 0 10px 26px -18px rgba(10,31,68,.18);
+}
+.lp.motion-enabled .space[data-tilt].is-tilting {
+  transition: opacity .75s ease, box-shadow .28s ease;
+  box-shadow: 0 36px 64px -26px rgba(10,31,68,.34), 0 10px 18px -12px rgba(10,31,68,.22);
+  will-change: transform;
+}
+.lp.motion-enabled .space[data-tilt]::after {
+  inset: auto; top: calc(50% - 230px); left: calc(50% - 230px); width: 460px; height: 460px;
+  background: radial-gradient(circle, rgba(255,255,255,.23), transparent 65%);
+  transform: translate3d(var(--light-x, 0px), var(--light-y, 0px), 48px);
+  opacity: 0; transition: opacity .25s ease; border-radius: 50%;
+}
+.lp.motion-enabled .space[data-tilt].is-tilting::after { opacity: 1; }
+.lp.motion-enabled [data-depth] { overflow: hidden; }
+.lp.motion-enabled [data-depth] img {
+  transform: translate3d(var(--image-x, 0px), calc(var(--photo-shift, 0px) + var(--image-y, 0px)), 0) scale(var(--photo-scale, 1.2));
+  transition: none;
+}
+.lp.motion-enabled .media-frame { position: relative; border-radius: var(--radius); }
+.lp.motion-enabled .space-body { position: relative; z-index: 1; }
+
+/* Scroll-scrubbed textile thread, including wrapped tablet and mobile layouts. */
+.lp.motion-enabled .steps { perspective: 1100px; isolation: isolate; }
+.lp.motion-enabled .steps::before, .lp.motion-enabled .steps::after,
+.lp.motion-enabled .step-art::after, .lp.motion-enabled .step-num::before { display: none; }
+.motion-route { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: -1; }
+.motion-track, .motion-thread { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; }
+.motion-track { stroke: #dce4eb; }
+.motion-thread { stroke: #1876a3; stroke-width: 3; stroke-dasharray: 1; stroke-dashoffset: 1; }
+.motion-cursor { opacity: 0; }
+.motion-cursor-core { fill: #176b98; stroke: #fff; stroke-width: 2; }
+.motion-cursor-halo { fill: #1876a3; opacity: .12; }
+.lp.motion-enabled .step.reveal {
+  --step-lift: 0px;
+  transform: perspective(1100px) translate3d(0, calc(var(--enter-y) + var(--step-lift)), var(--enter-z))
+    rotateX(var(--enter-rx)) scale(var(--enter-scale));
+  transition: transform .65s cubic-bezier(.18,.7,.25,1), opacity .6s ease;
+  transition-delay: 0s;
+}
+.lp.motion-enabled .step.is-active { --step-lift: -10px; }
+.lp.motion-enabled .step.is-active .step-art { transform: translate3d(0,-4px,16px); }
+.lp.motion-enabled .step.is-active .step-num { color: var(--navy); }
+.lp.motion-enabled .step.is-active .step-art img { filter: drop-shadow(0 10px 8px rgba(14,42,90,.12)); }
+.lp.motion-enabled .step.is-passed .step-num { color: #527080; }
+
+@media (hover: hover) and (pointer: fine) {
+  .lp.motion-enabled .btn:hover, .lp.motion-enabled .btn:focus-visible {
+    transform: translate3d(0,-4px,0) scale(1.012);
+    box-shadow: 0 16px 28px -14px rgba(10,31,68,.42);
+  }
+  .lp.motion-enabled .btn:active { transform: translateY(-1px) scale(.995); }
+}
+.lp.motion-enabled .cta::before {
+  /* Overscan a static weave instead of continuously repainting background-position. */
+  inset: -24px; animation: motion-weave 24s ease-in-out infinite alternate;
+}
+@keyframes motion-weave { to { transform: translate3d(16px,-16px,0); } }
+@media (max-width: 760px) {
+  .lp.motion-enabled .space[data-tilt]::after { display: none; }
+  .lp.motion-enabled .hero-copy { transform: none; }
+}
+@media (max-width: 640px) {
+  .lp.motion-enabled .hero-media { inset: auto; }
+  .lp.motion-enabled .hero-media img {
+    transform: translate3d(0,var(--hero-scroll,0px),0) scale(1.15);
+  }
+  .lp.motion-enabled .hero-weave { display: none; }
+  .lp.motion-enabled .steps { padding-left: 18px; }
+  .lp.motion-enabled .reveal.is-pending { --enter-y: 28px; --enter-z: -36px; --enter-rx: 1deg; --enter-scale: .98; }
+  .lp.motion-enabled .step.is-active { --step-lift: -5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp .hero-weave, .lp .motion-route { display: none !important; }
+  .lp .hero-copy, .lp .hero-media img, .lp [data-depth] img, .lp .space[data-tilt],
+  .lp .reveal, .lp .step-art { transform: none !important; opacity: 1 !important; filter: none !important; }
+  .lp .cta::before { animation: none !important; }
+}

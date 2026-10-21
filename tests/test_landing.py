@@ -52,3 +52,16 @@ def test_printed_qr_links_are_forwarded_to_framatex_space():
     script = (ROOT / 'static/landing/landing-redirect.js').read_text()
     assert "'/espace-framatex' + hash" in script
     assert '#\\/launch\\/' in script
+
+
+def test_landing_motion_assets_are_versioned_and_not_cached():
+    with TestClient(app) as client:
+        html = client.get('/').text
+        for name in ('landing.css', 'motion.css', 'landing.js'):
+            path = f'/assets/landing/{name}?v=landing-motion-1'
+            assert path in html
+            response = client.get(path)
+            assert response.status_code == 200
+            assert response.headers['cache-control'] == 'no-store'
+            assert response.headers['content-type'].split(';')[0] == ('text/javascript' if name.endswith('.js') else 'text/css')
+        assert 'class="hero-weave" aria-hidden="true"' in html
