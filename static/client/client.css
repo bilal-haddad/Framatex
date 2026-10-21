@@ -1,31 +1,32 @@
 /* Espace Client FRAMATEX — feuille autonome (n'affecte ni la landing ni l'Espace FRAMATEX). */
 
+/* Couleurs, polices, rayons, ombres : design system partagé (static/brand/tokens.css). */
 :root {
-  --navy: #0e2a5a;
-  --navy-deep: #0a1f44;
-  --blue: #1d4f91;
-  --cyan: #29a8df;
-  --cyan-ink: #0d74a6;
-  --cyan-soft: #8fd4f3;
-  --white: #ffffff;
-  --bg: #f6f8fb;
-  --line: #e1e6ed;
-  --line-strong: #cfd7e2;
-  --ink: #121a26;
-  --text: #3a4556;
-  --muted: #5f6b7d;
-  --success: #0b6b3a; --success-bg: #ecf7f0; --success-line: #bfe3cc;
-  --warn: #8a4b06;    --warn-bg: #fdf6e8;    --warn-line: #f1d9a8;
-  --danger: #a3241a;  --danger-bg: #fdf0ef;  --danger-line: #f3c7c2;
-  --info: #1d4f91;    --info-bg: #edf4fc;    --info-line: #c9dcf3;
-  --neutral: #4a5567; --neutral-bg: #f1f3f6; --neutral-line: #dde2e9;
+  --navy: var(--fx-navy);
+  --navy-deep: var(--fx-navy-deep);
+  --blue: var(--fx-blue);
+  --cyan: var(--fx-cyan);
+  --cyan-ink: var(--fx-cyan-ink);
+  --cyan-soft: var(--fx-cyan-soft);
+  --white: var(--fx-white);
+  --bg: var(--fx-surface);
+  --line: var(--fx-line);
+  --line-strong: var(--fx-line-strong);
+  --ink: var(--fx-ink);
+  --text: var(--fx-text);
+  --muted: var(--fx-muted);
+  --success: var(--fx-success); --success-bg: var(--fx-success-bg); --success-line: var(--fx-success-line);
+  --warn: var(--fx-warn);       --warn-bg: var(--fx-warn-bg);       --warn-line: var(--fx-warn-line);
+  --danger: var(--fx-danger);   --danger-bg: var(--fx-danger-bg);   --danger-line: var(--fx-danger-line);
+  --info: var(--fx-info);       --info-bg: var(--fx-info-bg);       --info-line: var(--fx-info-line);
+  --neutral: var(--fx-neutral); --neutral-bg: var(--fx-neutral-bg); --neutral-line: var(--fx-neutral-line);
 
-  --font: 'DM Sans', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-  --font-display: Manrope, 'DM Sans', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-  --radius: 6px;
-  --radius-sm: 4px;
-  --shadow: 0 1px 2px rgba(10, 31, 68, .04), 0 8px 24px -16px rgba(10, 31, 68, .18);
-  --ease: cubic-bezier(.2, .7, .2, 1);
+  --font: var(--fx-font);
+  --font-display: var(--fx-font-display);
+  --radius: var(--fx-radius);
+  --radius-sm: var(--fx-radius-sm);
+  --shadow: var(--fx-shadow);
+  --ease: var(--fx-ease);
   --sidebar-w: 264px;
 }
 
@@ -218,6 +219,13 @@ h1:focus { outline: none; }
 
 .notice { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; margin-bottom: 20px; border: 1px solid var(--info-line); border-left: 3px solid var(--cyan); border-radius: var(--radius-sm); background: var(--info-bg); color: var(--navy); font-size: 14.5px; }
 .notice .ico { color: var(--cyan-ink); margin-top: 2px; }
+.notice-warn { background: var(--warn-bg); border-color: var(--warn-line); border-left-color: var(--fx-folder-jaune); color: var(--warn); }
+.notice-warn .ico { color: var(--warn); }
+/* Listes de cartes (pièces demandées, documents transmis) : espacement régulier */
+#requested-body > .card + .card, #shared-body > .card + .card, #requested-detail > .card + .card { margin-top: 16px; }
+#requested-body .card > p, #shared-body .card > p, #requested-detail .card > p { margin-top: 6px; }
+#requested-body .card .btn, #shared-body .card .btn { margin-top: 14px; }
+#requested-detail h3 { margin: 22px 0 10px; font-size: 14px; color: var(--ink); }
 .notice-quiet { margin: 20px 0 0; background: #fff; border-color: var(--line); border-left-color: var(--line-strong); color: var(--text); }
 .notice-quiet .ico { color: var(--muted); }
 .muted-box { padding: 22px; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); text-align: center; color: var(--muted); font-size: 14px; background: #fff; }
@@ -408,6 +416,8 @@ h1:focus { outline: none; }
   .req-status { justify-self: start; }
   .req-article { white-space: normal; }
   .search { max-width: none; flex-basis: 100%; }
+  #requested-detail .file-item { flex-wrap: wrap; }
+  #requested-detail .file-item .btn { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -3,31 +3,32 @@
    Les polices du projet (DM Sans / Manrope) sont reprises dans la pile ;
    aucune police externe n'est chargée (CSP 'self'). */
 
+/* Couleurs, polices, rayons : design system partagé (static/brand/tokens.css). */
 :root {
-  --navy: #0e2a5a;
-  --navy-deep: #0a1f44;
-  --blue: #1d4f91;
-  --cyan: #29a8df;
-  --cyan-ink: #0d74a6;      /* cyan lisible sur fond blanc (AA) */
-  --cyan-soft: #8fd4f3;     /* cyan lisible sur fond bleu nuit */
-  --ink: #121a26;
-  --text: #3a4556;
-  --muted: #5f6b7d;
-  --line: #e2e6ec;
-  --mist: #f3f5f8;
-  --anthracite: #1b1f24;
+  --navy: var(--fx-navy);
+  --navy-deep: var(--fx-navy-deep);
+  --blue: var(--fx-blue);
+  --cyan: var(--fx-cyan);
+  --cyan-ink: var(--fx-cyan-ink);
+  --cyan-soft: var(--fx-cyan-soft);
+  --ink: var(--fx-ink);
+  --text: var(--fx-text);
+  --muted: var(--fx-muted);
+  --line: var(--fx-line);
+  --mist: var(--fx-surface);
+  --anthracite: var(--fx-anthracite);
   --anthracite-line: #2d333b;
-  --white: #ffffff;
+  --white: var(--fx-white);
 
-  --font: 'DM Sans', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-  --font-display: Manrope, 'DM Sans', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --font: var(--fx-font);
+  --font-display: var(--fx-font-display);
 
   --container: 1240px;
   --gutter: 32px;
   --section-y: clamp(80px, 9vw, 136px);
   --header-h: 84px;
-  --radius: 2px;
-  --ease: cubic-bezier(.2, .7, .2, 1);
+  --radius: var(--fx-radius-sm);
+  --ease: var(--fx-ease);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -213,7 +214,7 @@ address { font-style: normal; }
 .spaces-stack { display: grid; grid-auto-rows: 1fr; gap: clamp(24px, 2.6vw, 32px); }
 .space {
   display: grid; grid-template-columns: minmax(0, 48fr) minmax(0, 52fr);
-  min-height: 440px; border-radius: 8px; overflow: hidden;
+  min-height: 440px; border-radius: var(--fx-radius); overflow: hidden;
 }
 .space-client {
   background: var(--white); border: 1px solid #e1e6ed;

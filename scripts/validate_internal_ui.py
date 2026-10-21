@@ -264,7 +264,7 @@ def run_browser(output, base_url, email, password, ids):
         client_page.locator('#rq-qty').fill('750')
         client_page.locator('#rq-date').fill('2027-01-15')
         client_page.locator('#rq-files').set_input_files({'name': 'specification.txt', 'mimeType': 'text/plain', 'buffer': b'Specification Client navigateur'})
-        client_page.locator('#request-form button[type=submit]').click()
+        client_page.locator('#request-form button.btn-primary[type=submit]').click()
         expect(client_page.locator('.detail-head .eyebrow')).to_contain_text('DR-')
         expect(client_page.locator('#docs-zone')).to_contain_text('specification.txt')
         expect(client_page.locator('#docs-zone')).to_contain_text('SHA-256')

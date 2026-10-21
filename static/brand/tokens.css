@@ -1,0 +1,60 @@
+/* =============================================================================
+   FRAMATEX — design system partagé (landing, Espace Client, Espace FRAMATEX)
+   Source unique des couleurs, polices, rayons, ombres et focus.
+   Chaque espace charge ce fichier en premier puis s'appuie sur les variables --fx-*.
+   Polices hébergées localement (SIL Open Font License, voir fonts/OFL-*.txt) :
+   aucune requête externe, compatible avec la CSP du serveur.
+   ============================================================================= */
+
+@font-face { font-family: 'DM Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('/assets/brand/fonts/dm-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'DM Sans'; font-style: normal; font-weight: 500; font-display: swap; src: url('/assets/brand/fonts/dm-sans-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'DM Sans'; font-style: normal; font-weight: 600; font-display: swap; src: url('/assets/brand/fonts/dm-sans-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'DM Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url('/assets/brand/fonts/dm-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Manrope'; font-style: normal; font-weight: 600; font-display: swap; src: url('/assets/brand/fonts/manrope-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Manrope'; font-style: normal; font-weight: 700; font-display: swap; src: url('/assets/brand/fonts/manrope-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Manrope'; font-style: normal; font-weight: 800; font-display: swap; src: url('/assets/brand/fonts/manrope-latin-800-normal.woff2') format('woff2'); }
+
+:root {
+  /* Palette FRAMATEX validée */
+  --fx-navy: #0e2a5a;          /* couleur principale */
+  --fx-navy-deep: #0a1f44;     /* fonds sombres, survols profonds */
+  --fx-blue: #1d4f91;          /* liens, survol des boutons principaux */
+  --fx-cyan: #29a8df;          /* accent uniquement (filets, focus, numéros) */
+  --fx-cyan-ink: #0d74a6;      /* cyan lisible sur fond clair (AA) */
+  --fx-cyan-soft: #8fd4f3;     /* cyan lisible sur fond bleu nuit */
+  --fx-white: #ffffff;
+  --fx-surface: #f6f8fb;       /* fond d'application / sections claires */
+  --fx-line: #e1e6ed;          /* bordures et séparateurs */
+  --fx-line-strong: #cfd7e2;   /* bordures de champs */
+  --fx-ink: #121a26;           /* titres */
+  --fx-text: #3a4556;          /* texte courant */
+  --fx-muted: #5f6b7d;         /* texte secondaire (AA sur blanc) */
+  --fx-anthracite: #1b1f24;    /* pied de page */
+  --fx-tint: #edf4fc;          /* fond d'élément actif / info */
+
+  /* États (badges, alertes) */
+  --fx-success: #0b6b3a; --fx-success-bg: #ecf7f0; --fx-success-line: #bfe3cc;
+  --fx-warn: #8a4b06;    --fx-warn-bg: #fdf6e8;    --fx-warn-line: #f1d9a8;
+  --fx-danger: #a3241a;  --fx-danger-bg: #fdf0ef;  --fx-danger-line: #f3c7c2;
+  --fx-info: #1d4f91;    --fx-info-bg: #edf4fc;    --fx-info-line: #c9dcf3;
+  --fx-neutral: #4a5567; --fx-neutral-bg: #f1f3f6; --fx-neutral-line: #dde2e9;
+
+  /* Repères des quatre sous-dossiers (utilisés en filets/badges discrets) */
+  /* (filet = couleur vive, ink = texte lisible AA, bg = fond très pâle) */
+  --fx-folder-jaune: #d4a20a; --fx-folder-jaune-ink: #6f5300; --fx-folder-jaune-bg: #fdf8e6;
+  --fx-folder-rose: #c9568a;  --fx-folder-rose-ink: #8f2d58; --fx-folder-rose-bg: #fcf0f5;
+  --fx-folder-bleu: #2a7cc7;  --fx-folder-bleu-ink: #1b5794; --fx-folder-bleu-bg: #edf4fc;
+  --fx-folder-vert: #3a8f5c;  --fx-folder-vert-ink: #25663f; --fx-folder-vert-bg: #eef7f1;
+
+  /* Typographie */
+  --fx-font: 'DM Sans', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --fx-font-display: 'Manrope', 'DM Sans', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+
+  /* Formes et profondeur */
+  --fx-radius: 6px;            /* cartes, panneaux, fenêtres */
+  --fx-radius-sm: 4px;         /* boutons, champs, badges */
+  --fx-shadow: 0 1px 2px rgba(10, 31, 68, .04), 0 8px 24px -16px rgba(10, 31, 68, .18);
+  --fx-shadow-overlay: 0 24px 60px -20px rgba(10, 31, 68, .35);
+  --fx-focus: 0 0 0 3px rgba(41, 168, 223, .25);
+  --fx-ease: cubic-bezier(.2, .7, .2, 1);
+}

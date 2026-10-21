@@ -1,7 +1,6 @@
 /* Framatex 0.19 · White / blue visual system.
  * Independent implementation inspired by the user's approved visual direction.
  * No UI screenshot or external image asset is shipped in the application. */
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap');
 :root{
   --bg:#ffffff;--white:#ffffff;--ink:#111e35;--muted:#73809a;--line:#e8edf4;
   --green:#125feb;--green-dark:#064cc7;--green-soft:#eef5ff;
@@ -101,7 +100,6 @@ input:focus,textarea:focus,select:focus{border-color:#75a4f5}.field label{color:
 
 /* Framatex — Typographic rhythm and spacing refinement (October 2026).
    A single reading scale for navigation, forms, tables, dashboard and assistants. */
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 :root{
   --font-ui:'IBM Plex Sans','Segoe UI',Arial,sans-serif;
   --font-heading:'Plus Jakarta Sans','IBM Plex Sans',sans-serif;

@@ -175,8 +175,8 @@ function authLayout(content, { wide = false } = {}) {
 const NAV = [
   { key: 'requests', href: '#/demandes', label: 'Mes demandes', icon: 'layers' },
   { key: 'new', href: '#/demandes/nouvelle', label: 'Nouvelle demande', icon: 'plus' },
-  { key: 'requested', href: '#/documents-demandes', label: 'Documents demandés par FRAMATEX', icon: 'upload' },
-  { key: 'shared', href: '#/documents-transmis', label: 'Documents transmis par FRAMATEX', icon: 'download' },
+  { key: 'requested', href: '#/documents-demandes', label: 'Documents demandés', icon: 'upload' },
+  { key: 'shared', href: '#/documents-transmis', label: 'Documents transmis', icon: 'download' },
   { key: 'documents', href: '#/documents', label: 'Mes documents', icon: 'folder' },
   { key: 'account', href: '#/compte', label: 'Mon compte', icon: 'users' },
 ];
@@ -703,7 +703,8 @@ function viewNewRequest() {
 function documentRows(request) {
   return (request.documents || []).filter(d => d.versions?.length).map(d => {
     const last = d.versions[d.versions.length - 1];
-    return { id: d.id, name: d.title, file: last.original_name, version: last.number, versions: d.versions.length,
+    // Le serveur suffixe le titre d'une pièce demandée par « · demande <id> » (unicité) : non affiché.
+    return { id: d.id, name: String(d.title || '').replace(/ · demande [0-9a-f]{8}$/, ''), file: last.original_name, version: last.number, versions: d.versions.length,
       uploadedAt: last.created_at, size: last.size, sha256: last.sha256,
       requestId: request.id, requestNumber: request.request_number, article: request.article };
   });
@@ -881,13 +882,14 @@ async function viewDocumentRequests() {
 }
 
 async function viewDocumentRequest({ id }) {
-  mountShell('requested', `${pageHead({ title: 'Pièce demandée par FRAMATEX', back: '<a class="back-link" href="#/documents-demandes">Retour aux documents demandés</a>' })}<div id="requested-detail">${loadingState()}</div>`);
+  mountShell('requested', `${pageHead({ title: 'Pièce demandée par FRAMATEX', back: `<a class="back-link" href="#/documents-demandes">${icon('back')}Documents demandés</a>` })}<div id="requested-detail">${loadingState()}</div>`);
   const body = app.querySelector('#requested-detail');
   try {
     const item = await source.getDocumentRequest(id);
     const editable = ['requested', 'correction_required'].includes(item.status);
     const versions = item.document?.versions || [];
-    body.innerHTML = `<section class="card"><div class="card-head"><h2 class="card-title">${esc(item.title)}</h2>${documentStatusBadge(item.status)}</div>
+    const correction = item.status === 'correction_required' ? [...item.history].reverse().find(ev => ev.status === 'correction_required' && ev.message) : null;
+    body.innerHTML = `${correction ? `<div class="notice notice-warn">${icon('info')}<p><strong>Correction demandée par FRAMATEX :</strong> ${esc(correction.message)}</p></div>` : ''}<section class="card"><div class="card-head"><h2 class="card-title">${esc(item.title)}</h2>${documentStatusBadge(item.status)}</div>
       <p>${esc(item.description)}</p><p class="side-text">${esc(item.request_number)} · ${esc(item.requested_by)} · ${fmtDate(item.requested_at)}</p>
       ${item.accepted_at ? `<p class="side-text">Accepté le ${fmtDate(item.accepted_at)}</p>` : ''}
       <h3>Versions déposées</h3>${versions.length ? `<ul class="file-list">${[...versions].reverse().map(v => `<li class="file-item"><span class="file-ico">${icon('file')}</span><span class="file-body"><span class="file-name">${esc(v.original_name)} · V${v.number}</span><span class="file-meta" title="SHA-256 ${esc(v.sha256)}">${fmtDate(v.created_at)} · ${fmtSize(v.size)} · SHA-256 ${esc(v.sha256.slice(0, 16))}…</span></span><button type="button" class="btn btn-secondary btn-sm" data-requested-download="${v.number}" data-file="${esc(v.original_name)}">${icon('download')}Télécharger</button></li>`).join('')}</ul>` : '<p class="muted-box">À déposer : aucune version reçue.</p>'}
