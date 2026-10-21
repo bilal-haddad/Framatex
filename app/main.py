@@ -733,5 +733,9 @@ app.include_router(access_router)
 from .pilot_routes import router as pilot_router
 app.include_router(pilot_router)
 
+# Espace Client : comptes, sessions et stockage séparés du dossier jaune.
+from .client_routes import router as client_router
+app.include_router(client_router)
+
 # Le contrôle global de portée est effectué dans request_header_guard, avant
 # le dispatch FastAPI. Aucun routeur historique ne peut l'éviter.
