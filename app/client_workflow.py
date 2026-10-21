@@ -9,7 +9,7 @@ from sqlalchemy.orm.exc import StaleDataError
 from .access import must_access
 from .client_models import ClientAccount, ClientOrderDocument, ClientOrderDocumentVersion, ClientOrderRequest
 from .client_routes import add_audit, document_out, order_out
-from .client_workflow_models import ClientDocumentRequest, ClientDocumentRequestEvent, ClientSharedDocument
+from .client_workflow_models import ClientDocumentRequest, ClientDocumentRequestEvent, ClientOrderLaunch, ClientSharedDocument
 from .core import utcnow
 from .models import DocumentVersion, User
 
@@ -55,6 +55,29 @@ def transition_order(db, order, status, actor_id):
     db.commit()
     db.refresh(order)
     return order_out(order)
+
+
+def order_launch_out(db, order):
+    """Dossier Jaune ouvert pour une demande Client, ou None."""
+    link = db.get(ClientOrderLaunch, order.id)
+    if not link:
+        return None
+    from .models import Launch
+    launch = db.get(Launch, link.launch_id)
+    return {"id": launch.id, "name": launch.name, "order_ref": launch.order_ref,
+            "linked_at": timestamp(link.created_at)} if launch else None
+
+
+def launch_order_out(db, launch_id):
+    """Demande Client à l'origine d'un Dossier Jaune, ou None."""
+    link = db.scalar(select(ClientOrderLaunch).where(ClientOrderLaunch.launch_id == launch_id))
+    order = db.get(ClientOrderRequest, link.order_request_id) if link else None
+    if not order:
+        return None
+    return {"id": order.id, "request_number": order.request_number, "client": order.client.raison_sociale,
+            "article": order.article, "quantite": order.quantite,
+            "date_souhaitee": order.date_souhaitee.isoformat() if order.date_souhaitee else None,
+            "reference_client": order.reference_client, "status": order.status}
 
 
 def get_document_request(db, request_id, client=None):

@@ -15,7 +15,7 @@ ou suite de tests) et qu'elle s'est comportée comme décrit.
 | **Partiel** | Fonction utilisable mais volontairement limitée ; la limite est décrite. |
 | **Non implémenté** | Absent de la plateforme. N'est présenté nulle part comme disponible. |
 
-Colonne « Preuve » : `QA` = `scripts/qa_platform_review.py` (83 vérifications sur
+Colonne « Preuve » : `QA` = `scripts/qa_platform_review.py` (87 vérifications sur
 serveur réel), `UI-int` = `scripts/validate_internal_ui.py`, `UI-cli` =
 `scripts/validate_client_workflow_ui.py`, `pytest` / `JS` = suites de `tests/`,
 `Nav` = parcours navigateur de recette (captures, accessibilité, responsive),
@@ -34,8 +34,12 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 Recette automatique complète (base temporaire, aucune donnée réelle touchée) :
 
 ```bash
-python scripts/qa_platform_review.py --output data/qa-platform
+python scripts/qa_platform_review.py --output data/qa-platform     # API : 87 vérifications
+python scripts/demo_full_platform.py --output data/demo-platform   # API + Chromium 1440/1024/820/390 : 111 vérifications
 ```
+
+Sous Windows, une seule commande prépare et lance la démonstration :
+`scripts\start_windows.cmd -Demo` (voir `docs/WINDOWS_LOCAL.md`).
 
 Dossiers de démonstration : A `FR-DEMO-2026-0141` complet ; B `…0142` calcul du
 besoin manquant (Jaune) ; C `…0143` pièce douanière manquante (Bleu) ; D `…0144`
@@ -143,7 +147,8 @@ fiche de prix en attente de validation ; E `…0145` fiche d'emploi V2, impact,
 | Ambiguïtés | Question tracée, résolution avec note obligatoire. | Section « Exigences client » | Ouvrir puis résoudre une ambiguïté. | Fonctionnel | QA, pytest |
 | Matières | Besoin documenté, mouvements commandés / reçus justifiés par une pièce, annulation tracée. | Section « Traçabilité des matières » | Ajouter une ligne et un mouvement. | Fonctionnel | QA, pytest |
 | Engagements issus d'emails | Suggestions d'engagements à confirmer par un humain. | Section « Emails et engagements » | Importer un `.eml` (dossier E). | Fonctionnel | QA, pytest |
-| Acceptation → ordre de fabrication / ORLI | — | — | — | Non implémenté — l'acceptation ne crée aucune commande ni écriture ORLI. | — |
+| Accepter et créer le Dossier Jaune | Depuis une demande envoyée, en étude ou acceptée : acceptation si besoin, puis ouverture du dossier avec ses 4 sous-dossiers, client, article, quantité, numéro de demande ; référence client et date souhaitée affichées dans la fiche commande ; lien permanent ; audit ; une seule création possible (base de données). | Clients et demandes > fiche de la demande | Ouvrir une demande envoyée, cliquer « Accepter et créer le Dossier Jaune ». | Fonctionnel | QA, Nav, pytest |
+| Acceptation → écriture ORLI | — | — | — | Non implémenté — aucun échange avec ORLI (hors périmètre). | — |
 
 ## 8. Alertes
 
@@ -237,7 +242,7 @@ Rien ci-dessous n'est présenté comme disponible dans l'interface.
   passe, côté Client comme côté FRAMATEX.
 - **Profil client** en lecture seule.
 - **ORLI** : import de fichier uniquement.
-- **Acceptation d'une demande** : ne crée aucun ordre de fabrication.
+- **Dossier créé depuis une demande** : ouvert sans profil de complétude ; le choisir ensuite avec « Profil et étape ». Aucune écriture ORLI.
 - **Retrait d'un partage** : un fichier déjà téléchargé reste chez le client.
 - **Recherche** sur les métadonnées seulement, pas sur le texte des fichiers.
 - **OCR** dépendant de Tesseract (`fra`, `eng`) et PyMuPDF sur le serveur.

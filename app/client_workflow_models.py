@@ -62,3 +62,17 @@ class ClientSharedDocument(Base):
     revoked_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ClientOrderLaunch(Base):
+    """Lien permanent entre une demande Client et le Dossier Jaune ouvert pour elle.
+
+    La clé primaire sur la demande et l'unicité du lancement empêchent toute
+    création en double, y compris en cas de double clic ou de requêtes concurrentes.
+    """
+    __tablename__ = "client_order_launches"
+
+    order_request_id: Mapped[str] = mapped_column(ForeignKey("client_order_requests.id"), primary_key=True)
+    launch_id: Mapped[str] = mapped_column(ForeignKey("launches.id"), unique=True, index=True)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

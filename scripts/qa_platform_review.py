@@ -29,7 +29,9 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -121,12 +123,14 @@ def start_server(env):
     raise RuntimeError('Serveur de recette non prêt')
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output', type=Path, default=ROOT / 'data' / 'qa-platform')
-    args = parser.parse_args()
-    output = args.output.resolve(); output.mkdir(parents=True, exist_ok=True)
-    qa = QA()
+@contextmanager
+def platform_server(qa):
+    """Base vierge migrée, administrateur et dossiers A–E, serveur Uvicorn réel.
+
+    Les mots de passe sont générés en mémoire pour la durée de la recette ; aucun
+    n'est écrit dans le dépôt ni dans le rapport. Après l'arrêt du serveur, la
+    migration est rejouée sur une copie de la base pour vérifier qu'elle est additive.
+    """
     with tempfile.TemporaryDirectory(prefix='framat-qa-') as tmp:
         env = {**os.environ, 'FRAMATEX_DATA_DIR': tmp, 'FRAMATEX_SECRET_KEY': secrets.token_urlsafe(48)}
         env.pop('DATABASE_URL', None); env.pop('FRAMATEX_COOKIE_SECURE', None)
@@ -147,7 +151,7 @@ def main():
             ids = seed(db, admin_user)
         server, base = start_server(env)
         try:
-            run_checks(qa, base, password, ids, tmp)
+            yield SimpleNamespace(base=base, password=password, ids=ids, tmp=tmp, env=env)
         finally:
             server.terminate()
             try:
@@ -155,13 +159,27 @@ def main():
             except subprocess.TimeoutExpired:
                 server.kill()
         run_migration_copy(qa, tmp, env)
+
+
+def write_report(qa, output, name='qa-results.json'):
     passed = sum(r['ok'] for r in qa.results)
     report = {'tested_at': datetime.now(timezone.utc).isoformat(),
               'source_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
               'passed': passed, 'failed': len(qa.results) - passed, 'checks': qa.results}
-    (output / 'qa-results.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
+    output.mkdir(parents=True, exist_ok=True)
+    (output / name).write_text(json.dumps(report, ensure_ascii=False, indent=2))
     print(f"\n{passed}/{len(qa.results)} vérifications réussies.", flush=True)
-    sys.exit(0 if passed == len(qa.results) else 1)
+    return 0 if passed == len(qa.results) else 1
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output', type=Path, default=ROOT / 'data' / 'qa-platform')
+    args = parser.parse_args()
+    qa = QA()
+    with platform_server(qa) as ctx:
+        run_checks(qa, ctx.base, ctx.password, ctx.ids, ctx.tmp)
+    sys.exit(write_report(qa, args.output.resolve()))
 
 
 def run_migration_copy(qa, tmp, env):
@@ -225,11 +243,19 @@ def run_checks(qa, base, password, ids, tmp):
     qa.run('Sécurité', 'Écriture sans en-tête X-Framatex-Request refusée (403)', csrf_header)
     login = admin.post('/api/auth/login', json={'email': 'recette@framatex.test', 'password': password})
     qa.check('FRAMATEX', 'Connexion interne email + mot de passe', login.status_code == 200, login.text)
+    me = admin.get('/api/auth/me')
+    qa.check('FRAMATEX', 'GET /api/auth/me après connexion : profil administrateur',
+             me.status_code == 200 and me.json().get('admin') is True and me.json().get('email') == 'recette@framatex.test', me.text[:200])
     bad = anon.post('/api/auth/login', headers=H, json={'email': 'recette@framatex.test', 'password': 'mauvais-mot-de-passe'})
     qa.check('FRAMATEX', 'Connexion interne refusée avec mauvais mot de passe (401)', bad.status_code == 401)
 
     launches = {l['order_ref']: l for l in admin.get('/api/launches').json()}
     A, B, C, D, E = (launches[f'FR-DEMO-2026-014{i}']['id'] for i in range(1, 6))
+    def four_folders():
+        for code, launch_id in zip('ABCDE', (A, B, C, D, E)):
+            folders = admin.get(f'/api/launches/{launch_id}').json()['folders']
+            assert [f['slug'] for f in folders] == ['jaune', 'rose', 'bleu', 'vert'], (code, folders)
+    qa.run('Dossier Jaune', 'Chaque dossier A–E possède ses 4 sous-dossiers JAUNE, ROSE, BLEU, VERT', four_folders)
 
     # ------------------------------------------------------------- Dashboard / complétude / manquants
     dash = admin.get('/api/workspace/dashboard').json()
@@ -480,22 +506,23 @@ def run_checks(qa, base, password, ids, tmp):
              {n['party_type'] for n in notes if secret_note in n['body'] and n.get('launch_id') == A} == {'client', 'fournisseur', 'atelier'})
 
     # ------------------------------------------------------------- Client ↔ FRAMATEX
+    client_pw = secrets.token_urlsafe(16) + 'Aa1!'   # comptes Client de recette, base temporaire
     def register(email, company):
         r = anon.post('/api/client/register', headers=H, json={'raison_sociale': company, 'nom_contact': 'Contact recette', 'email': email,
-                      'telephone': '+33 6 00 00 00 00', 'adresse': '1 rue de la Recette, 59000 Lille', 'pays': 'France', 'password': 'ClientRecette2026!'})
+                      'telephone': '+33 6 00 00 00 00', 'adresse': '1 rue de la Recette, 59000 Lille', 'pays': 'France', 'password': client_pw})
         assert r.status_code == 201, r.text
         return r.json()
     acc_a = register('client.a@recette.test', 'Client A Recette')
     acc_b = register('client.b@recette.test', 'Client B Recette')
     qa.check('Client', 'Inscription : compte créé au statut pending', acc_a['status'] == 'pending')
     ca = httpx.Client(base_url=base, headers=H, timeout=30); cb = httpx.Client(base_url=base, headers=H, timeout=30)
-    r = ca.post('/api/client/login', json={'email': 'client.a@recette.test', 'password': 'ClientRecette2026!'})
+    r = ca.post('/api/client/login', json={'email': 'client.a@recette.test', 'password': client_pw})
     qa.check('Client', 'Connexion refusée tant que le compte est pending (403 account_pending)', r.status_code == 403 and 'pending' in r.text, r.text)
     for acc in (acc_a, acc_b):
         assert admin.patch(f"/api/admin/clients/{acc['id']}/status", json={'status': 'active'}).status_code == 200
     qa.check('Client', 'Activation par un administrateur FRAMATEX', True)
-    qa.check('Client', 'Connexion Client A après activation', ca.post('/api/client/login', json={'email': 'client.a@recette.test', 'password': 'ClientRecette2026!'}).status_code == 200)
-    cb.post('/api/client/login', json={'email': 'client.b@recette.test', 'password': 'ClientRecette2026!'})
+    qa.check('Client', 'Connexion Client A après activation', ca.post('/api/client/login', json={'email': 'client.a@recette.test', 'password': client_pw}).status_code == 200)
+    cb.post('/api/client/login', json={'email': 'client.b@recette.test', 'password': client_pw})
     qa.check('Client', 'Mauvais mot de passe client : refus générique (401)', anon.post('/api/client/login', headers=H, json={'email': 'client.a@recette.test', 'password': 'faux-mot-de-passe'}).status_code == 401)
     def client_cannot_call_internal():
         for path in ('/api/workspace/dashboard', '/api/workspace/search', '/api/workspace/experience', '/api/launches', '/api/admin/clients', '/api/admin/client-order-requests'):
@@ -550,6 +577,13 @@ def run_checks(qa, base, password, ids, tmp):
 
     # Publication FRAMATEX → Client
     share_id = None
+    def unpublished_invisible():
+        detail = admin.get(f'/api/launches/{A}').json()
+        doc = next(d for f in detail['folders'] for d in f.get('documents', []))
+        assert ca.get('/api/client/shared-documents').json() == [], 'document visible sans publication'
+        for path in (f"/api/documents/{doc['id']}/versions/1/download", f'/api/launches/{A}', '/api/workspace/search?q=FR-DEMO'):
+            assert ca.get(path).status_code == 401, path
+    qa.run('Sécurité', 'Documents internes non publiés : invisibles et non téléchargeables par un Client', unpublished_invisible)
     def publication():
         nonlocal share_id
         detail = admin.get(f'/api/launches/{A}').json()
@@ -590,6 +624,25 @@ def run_checks(qa, base, password, ids, tmp):
         assert all(r['id'] != a_req['id'] for r in cb.get('/api/client/order-requests').json())
         assert cb.get('/api/client/document-requests').json() == []
     qa.run('Sécurité', 'Client B ne voit ni demandes, ni documents, ni pièces demandées, ni partages de A (404)', isolation)
+    def order_to_launch():
+        order = ca.post('/api/client/order-requests', json={'article': 'Veste recette dossier', 'quantite': 640, 'date_souhaitee': '2027-06-15',
+                        'reference_client': 'REF-QA-640', 'status': 'submitted'}).json()
+        created = admin.post(f"/api/admin/client-order-requests/{order['id']}/launch")
+        assert created.status_code == 201, created.text
+        launch_id = created.json()['launch']['id']
+        assert created.json()['order']['status'] == 'accepted'
+        assert ca.get(f"/api/client/order-requests/{order['id']}").json()['status'] == 'accepted'
+        detail = admin.get(f'/api/launches/{launch_id}').json()
+        assert [f['slug'] for f in detail['folders']] == ['jaune', 'rose', 'bleu', 'vert'] and detail['order_ref'] == order['request_number']
+        ops = admin.get(f'/api/launches/{launch_id}/operations').json()
+        assert ops['article'] == 'Veste recette dossier' and ops['quantity'] == 640, ops
+        assert ops['client_request']['reference_client'] == 'REF-QA-640' and ops['client_request']['date_souhaitee'] == '2027-06-15'
+        again = admin.post(f"/api/admin/client-order-requests/{order['id']}/launch")
+        assert again.status_code == 200 and again.json()['launch']['id'] == launch_id, again.text
+        assert ca.post(f"/api/admin/client-order-requests/{order['id']}/launch").status_code == 401
+        assert admin.get('/api/workspace/activity', params={'action': 'client.order_request.launch_created'}).json()['total'] >= 1
+        return f"dossier {detail['order_ref']} créé une seule fois"
+    qa.run('Client ↔ FRAMATEX', 'Demande Client → acceptation → Dossier Jaune (4 sous-dossiers, article, quantité, référence, date, lien, audit, sans doublon)', order_to_launch)
     def notes_never_client():
         payloads = [ca.get('/api/client/order-requests').text, ca.get(f"/api/client/order-requests/{draft['id']}").text,
                     ca.get('/api/client/document-requests').text, ca.get('/api/client/shared-documents').text, ca.get('/api/client/me').text]
@@ -597,7 +650,7 @@ def run_checks(qa, base, password, ids, tmp):
     qa.run('Mémoire interne', 'Notes internes jamais renvoyées par les API Client', notes_never_client)
     def suspended():
         admin.patch(f"/api/admin/clients/{acc_b['id']}/status", json={'status': 'suspended'})
-        me = cb.get('/api/client/me'); login_b = anon.post('/api/client/login', headers=H, json={'email': 'client.b@recette.test', 'password': 'ClientRecette2026!'})
+        me = cb.get('/api/client/me'); login_b = anon.post('/api/client/login', headers=H, json={'email': 'client.b@recette.test', 'password': client_pw})
         assert me.status_code == 403 and login_b.status_code == 403 and 'suspended' in login_b.text, (me.status_code, login_b.text)
     qa.run('Sécurité', 'Compte suspendu : session et connexion refusées (403 account_suspended)', suspended)
     qa.check('Client', 'Déconnexion client : session révoquée', ca.post('/api/client/logout').status_code == 200 and ca.get('/api/client/me').status_code == 401)

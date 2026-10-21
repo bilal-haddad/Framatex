@@ -46,3 +46,12 @@ def test_web_assets_keep_browser_types_despite_windows_registry(monkeypatch):
     monkeypatch.undo()
     mimetypes.init()
     register_web_mime_types()
+
+
+def test_windows_launcher_has_no_typographic_quotes():
+    # PowerShell traite ’ ‘ comme des apostrophes et “ ” comme des guillemets : une
+    # apostrophe typographique dans un message coupe la chaîne et casse tout le script.
+    from pathlib import Path
+    script = (Path(__file__).resolve().parents[1] / 'scripts' / 'start_windows.ps1').read_text(encoding='utf-8-sig')
+    offenders = [n for n, line in enumerate(script.splitlines(), 1) if any(c in line for c in '‘’“”')]
+    assert not offenders, f'Guillemets typographiques aux lignes {offenders}'

@@ -1,10 +1,16 @@
 """Contrôles préalables au démarrage local, appelés par scripts/start_windows.ps1.
 
-    python scripts/windows_preflight.py deps   # dépendances importables
-    python scripts/windows_preflight.py db     # dossier data, verrou SQLite, sauvegarde, migration
+    python scripts/windows_preflight.py deps                 # dépendances importables
+    python scripts/windows_preflight.py code                 # syntaxe Python de app/ et scripts/
+    python scripts/windows_preflight.py db                   # data, verrou SQLite, sauvegarde, migrations
+    python scripts/windows_preflight.py accounts [--email E] # comptes internes et Client
+    python scripts/windows_preflight.py create-admin --email E   # mot de passe lu dans FRAMATEX_SECRET_INPUT
+    python scripts/windows_preflight.py seed --email E       # dossiers de démonstration A–E (idempotent)
 
 Aucune donnée n'est supprimée. La sauvegarde utilise l'API de sauvegarde SQLite
-(copie cohérente même si la base est ouverte ailleurs).
+(copie cohérente même si la base est ouverte ailleurs). Aucun mot de passe n'est
+lu en argument, affiché ou écrit : create-admin le reçoit dans une variable
+d'environnement propre à ce processus, retirée dès la lecture.
 """
 from __future__ import annotations
 
@@ -113,6 +119,102 @@ def check_db() -> int:
     return 0
 
 
+def check_code() -> int:
+    import compileall
+    import io
+    from contextlib import redirect_stdout
+    report = io.StringIO()
+    with redirect_stdout(report):
+        good = all(compileall.compile_dir(str(ROOT / folder), quiet=1, force=False)
+                   for folder in ('app', 'scripts'))
+    if not good:
+        warn('Erreur de syntaxe Python :\n' + report.getvalue().strip())
+        return 1
+    ok('Code Python de app/ et scripts/ : syntaxe valide')
+    return 0
+
+
+def _session():
+    sys.path.insert(0, str(ROOT))
+    from app.core import SessionLocal
+    return SessionLocal()
+
+
+def check_accounts(email: str | None) -> int:
+    from sqlalchemy import func, select
+    with _session() as db:
+        from app.client_models import ClientAccount
+        from app.models import Role, User
+        users = db.scalars(select(User)).all()
+        admins = [u for u in users if u.active and any(r.name == 'Administrateur' for r in u.roles)]
+        clients = dict(db.execute(select(ClientAccount.status, func.count()).group_by(ClientAccount.status)).all())
+        ok(f"Comptes internes : {sum(u.active for u in users)} actif(s) dont {len(admins)} administrateur(s) ; "
+           f"comptes Client : {clients.get('active', 0)} actif(s), {clients.get('pending', 0)} en attente, "
+           f"{clients.get('suspended', 0)} suspendu(s)")
+        if email:
+            target = next((u for u in users if u.email == email.strip().lower()), None)
+            if not target:
+                print(f'  [..]   Compte {email} absent', flush=True)
+                return 10
+            if target not in admins:
+                warn(f'Le compte {email} existe mais n’est pas un administrateur actif')
+                return 11
+            ok(f'Compte administrateur {email} présent et actif')
+            return 0
+        return 0 if admins else 12
+
+
+def create_admin(email: str) -> int:
+    secret = os.environ.pop('FRAMATEX_SECRET_INPUT', '')
+    if not 12 <= len(secret) <= 256:
+        warn('Mot de passe refusé : 12 à 256 caractères requis')
+        return 1
+    if '@' not in email:
+        warn('Adresse email invalide')
+        return 1
+    from sqlalchemy import select
+    with _session() as db:
+        from app.core import hash_password
+        from app.models import Role, User
+        email = email.strip().lower()
+        if db.scalar(select(User).where(User.email == email)):
+            warn(f'Le compte {email} existe déjà : aucun changement')
+            return 1
+        role = db.scalar(select(Role).where(Role.name == 'Administrateur')) or Role(name='Administrateur')
+        db.add(User(email=email, name='Administrateur de test', password_hash=hash_password(secret), roles=[role]))
+        db.commit()
+    del secret
+    ok(f'Compte administrateur {email} créé (mot de passe non enregistré en clair)')
+    return 0
+
+
+def seed_demo(email: str) -> int:
+    from sqlalchemy import select
+    with _session() as db:
+        from app.models import Launch, User
+        from app.seed_operations_demo import SCENARIOS, seed
+        user = db.scalar(select(User).where(User.email == email.strip().lower()))
+        if not user:
+            warn(f'Compte {email} introuvable : démonstration non chargée')
+            return 1
+        refs = [reference for reference, *_ in SCENARIOS.values()]
+        before = set(db.scalars(select(Launch.order_ref).where(Launch.order_ref.in_(refs))))
+        seed(db, user)
+        db.commit()
+    created = len(refs) - len(before)
+    ok(f'Dossiers de démonstration A–E disponibles : {created} créé(s), {len(before)} déjà présent(s), aucun doublon')
+    return 0
+
+
 if __name__ == '__main__':
-    command = sys.argv[1] if len(sys.argv) > 1 else 'deps'
-    sys.exit({'deps': check_deps, 'db': check_db}[command]())
+    import argparse
+    parser = argparse.ArgumentParser(description='Contrôles préalables FRAMATEX')
+    parser.add_argument('command', choices=('deps', 'code', 'db', 'accounts', 'create-admin', 'seed'))
+    parser.add_argument('--email')
+    args = parser.parse_args()
+    if args.command in ('create-admin', 'seed') and not args.email:
+        parser.error('--email est requis')
+    handlers = {'deps': check_deps, 'code': check_code, 'db': check_db,
+                'accounts': lambda: check_accounts(args.email),
+                'create-admin': lambda: create_admin(args.email), 'seed': lambda: seed_demo(args.email)}
+    sys.exit(handlers[args.command]())

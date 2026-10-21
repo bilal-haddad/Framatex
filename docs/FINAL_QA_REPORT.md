@@ -225,3 +225,38 @@ Planches dans `docs/qa-captures/` :
 
 Les documents manquants figurent dans les planches 07 (dashboard) et 08
 (dossier B).
+
+## 8. Mise à jour `fix/windows-demo-final` : démonstration locale fiable
+
+| Suite | Résultat |
+| --- | --- |
+| Tests Python (`pytest`) | **140 réussis** (+ 4 : Dossier Jaune depuis une demande ×3, guillemets du lanceur ×1) |
+| Tests JS | **16 scripts réussis** |
+| Recette API (`scripts/qa_platform_review.py`) | **87 / 87** (+ `/api/auth/me`, 4 sous-dossiers, documents non publiés, demande → Dossier Jaune) |
+| Démonstration complète (`scripts/demo_full_platform.py`) | **111 / 111** : recette API + parcours Chromium (1440 de bout en bout, puis 1440 / 1024 / 820 / 390), 0 erreur JavaScript bloquante, aucun défilement horizontal |
+| Recettes navigateur de Codex | Interne : 7 parcours, 52 captures ; Client : scénario complet ; aucune erreur JavaScript |
+| Lanceur Windows | Syntaxe valide et 0 incompatibilité Windows PowerShell 5.1 (PSScriptAnalyzer) ; 11 tests de logique du port ; parcours réel `-Demo -CheckOnly` dans PowerShell 7 |
+
+Bugs trouvés et corrigés :
+
+| # | Bug | Correction |
+| --- | --- | --- |
+| 11 | Toute erreur du lanceur après le démarrage arrêtait le serveur (bloc de nettoyage), d'où `ERR_CONNECTION_REFUSED` | Erreurs signalées sans arrêter le serveur ; supervision jusqu'à Ctrl+C ou fermeture |
+| 12 | Fenêtre fermée : serveur orphelin sur 8000, lancement suivant sur 8001, ancien onglet sur un port mort | Serveur lié à la fenêtre (objet « job » Windows) ; anciens serveurs FRAMATEX de ce dossier arrêtés au démarrage |
+| 13 | Journaux du serveur dans la console : une sélection pouvait geler le serveur | Journaux redirigés vers `data\logs`, affichés par le lanceur |
+| 14 | Apostrophes typographiques dans des chaînes PowerShell : script illisible pour PowerShell | Chaînes corrigées ; test de non-régression |
+| 15 | Recette : mot de passe Client de recette écrit en dur | Mot de passe généré en mémoire |
+
+Fonction ajoutée : **« Accepter et créer le Dossier Jaune »** depuis une demande Client.
+- **Création.** Le dossier reçoit ses 4 sous-dossiers, le client, l'article et la
+  quantité. Le numéro de demande devient la référence de commande.
+- **Lien.** La référence client et la date souhaitée sont affichées dans la fiche
+  commande. Le lien avec la demande est permanent (migration additive
+  `0007_client_order_launch`), et l'opération est auditée.
+- **Doublons.** Une seule création est possible : la base de données refuse la
+  seconde, et un nouvel appel renvoie le dossier existant.
+- **Accès.** La fonction est réservée aux administrateurs.
+
+Un test de migration de Codex a été adapté. Il supposait que `0006` était la
+dernière révision ; il sélectionne désormais explicitement les révisions
+antérieures à `0006`. Sa vérification est inchangée.

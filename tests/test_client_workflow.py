@@ -374,7 +374,7 @@ def test_additive_migration_on_empty_and_existing_database(tmp_path, monkeypatch
     if existing:
         Base.metadata.create_all(engine, tables=[table for name, table in Base.metadata.tables.items() if name not in NEW_TABLES])
         with engine.begin() as conn:
-            for revision in migration.REVISIONS[:-1]:
+            for revision in migration.REVISIONS[:migration.REVISIONS.index('0006_client_workflow')]:
                 conn.execute(text('INSERT INTO schema_migrations VALUES (:v,:d)'), {'v': revision, 'd': '2026-10-21'})
         with Session(engine) as db:
             account = ClientAccount(client_code='CL-PRESERVE', raison_sociale='Client conservé', nom_contact='Contact',

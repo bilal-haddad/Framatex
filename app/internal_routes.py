@@ -69,7 +69,9 @@ def collaborators(user: User = Depends(get_current_user), db: Session = Depends(
 def operations(launch_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     must, _, _, _ = guards()
     must(user, "launch.read")
-    return launch_summary(db, user, must_access(db, user, launch_id))
+    from .client_workflow import launch_order_out
+    return {**launch_summary(db, user, must_access(db, user, launch_id)),
+            "client_request": launch_order_out(db, launch_id)}
 
 
 @router.patch("/api/launches/{launch_id}/operations")
@@ -316,7 +318,9 @@ def client_request(request_id: str, user: User = Depends(get_current_user), db: 
     row = db.get(ClientOrderRequest, request_id)
     if not row:
         raise HTTPException(404, "Demande client introuvable")
-    return {**order_out(row, include_documents=True), "client": client_out(row.client)}
+    from .client_workflow import order_launch_out
+    return {**order_out(row, include_documents=True), "client": client_out(row.client),
+            "launch": order_launch_out(db, row)}
 
 
 @router.get("/api/admin/client-order-requests/{request_id}/documents/{document_id}/versions/{number}/download")

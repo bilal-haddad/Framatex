@@ -2,23 +2,26 @@
 from __future__ import annotations
 
 from typing import Literal
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+import os
+
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 
 from .client_models import ClientAccount, ClientOrderDocument, ClientOrderDocumentVersion, ClientOrderRequest
-from .client_routes import (CLIENT_STORAGE, add_audit, get_current_client, own_order,
+from .client_routes import (CLIENT_STORAGE, add_audit, get_current_client, order_out, own_order,
                             store_client_upload)
 from .client_workflow import (DOCUMENT_TRANSITIONS, authorized_source, commit_workflow, get_document_request,
-                              get_order, internal_user, request_event, request_out, safe_source,
+                              get_order, internal_user, order_launch_out, request_event, request_out, safe_source,
                               shared_out, transition_order)
-from .client_workflow_models import ClientDocumentRequest, ClientSharedDocument
+from .client_workflow_models import ClientDocumentRequest, ClientOrderLaunch, ClientSharedDocument
 from .core import get_current_user, get_db, utcnow
-from .models import DocumentVersion, User
+from .internal_models import LaunchOperations
+from .models import DocumentVersion, Folder, Launch, User
 
 router = APIRouter(tags=["Workflow Client"])
 
@@ -82,6 +85,58 @@ def internal_order_status(order_id: str, payload: InternalOrderStatus,
                           user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     internal_user(user)
     return transition_order(db, get_order(db, order_id), payload.status, user.id)
+
+
+@router.post("/api/admin/client-order-requests/{order_id}/launch")
+def open_launch_for_order(order_id: str, response: Response,
+                          user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Accepte la demande si nécessaire et ouvre son Dossier Jaune, une seule fois."""
+    from .main import FOLDERS, audit, must
+    internal_user(user)
+    must(user, "launch.create")
+    order = get_order(db, order_id)
+    existing = order_launch_out(db, order)
+    if existing:
+        return {"created": False, "launch": existing, "order": order_out(order)}
+    previous = order.status
+    if previous not in {"submitted", "under_review", "accepted"}:
+        raise HTTPException(409, "Seule une demande envoyée, en étude ou acceptée peut ouvrir un Dossier Jaune")
+    if previous != "accepted":
+        changed = db.execute(update(ClientOrderRequest).where(ClientOrderRequest.id == order.id,
+            ClientOrderRequest.status == previous).values(status="accepted", updated_at=utcnow()),
+            execution_options={"synchronize_session": False})
+        if changed.rowcount != 1:
+            db.rollback()
+            raise HTTPException(409, "Demande modifiée entre-temps ; actualisez")
+        add_audit(db, user.id, "client.order_request.status_changed", "client_order_request", order.id,
+                  {"client_id": order.client_id, "previous": previous, "status": "accepted"})
+    client = order.client
+    launch = Launch(name=f"{order.article} · {client.raison_sociale}"[:180], client_name=client.raison_sociale[:150],
+                    order_ref=order.request_number, created_by=user.id,
+                    restricted=os.getenv("FRAMATEX_RESTRICT_NEW_LAUNCHES", "0") == "1")
+    db.add(launch)
+    db.flush()
+    for slug, label in FOLDERS:
+        db.add(Folder(launch_id=launch.id, slug=slug, label=label))
+    db.add(LaunchOperations(launch_id=launch.id, article=order.article[:180], quantity=order.quantite,
+                            responsible_id=user.id))
+    db.add(ClientOrderLaunch(order_request_id=order.id, launch_id=launch.id, created_by=user.id))
+    audit(db, user, "launch.create", "launch", launch.id,
+          {"name": launch.name, "orli": None, "client_order_request": order.request_number})
+    add_audit(db, user.id, "client.order_request.launch_created", "client_order_request", order.id,
+              {"client_id": order.client_id, "launch_id": launch.id, "request_number": order.request_number})
+    try:
+        db.commit()
+    except IntegrityError:
+        # Requête concurrente : le lien unique garantit qu'un seul dossier existe.
+        db.rollback()
+        existing = order_launch_out(db, order)
+        if existing:
+            return {"created": False, "launch": existing, "order": order_out(order)}
+        raise HTTPException(409, "Création concurrente ; actualisez")
+    db.refresh(order)
+    response.status_code = 201
+    return {"created": True, "launch": order_launch_out(db, order), "order": order_out(order)}
 
 
 @router.post("/api/admin/client-order-requests/{order_id}/document-requests", status_code=201)
