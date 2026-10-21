@@ -5,7 +5,7 @@ const AREA_TARGETS={documents:'.detail-layout',workflow:'.workflow-root',spec:'.
 
 function priorityCard(item){
  const label=PRIORITY_LABELS[item.priority]||'À suivre';
- return `<button type="button" class="priority-item" data-workspace-launch="${e(item.launch_id)}" data-workspace-area="${e(item.area)}"><span class="priority-dot ${e(item.priority)}"></span><span class="priority-content"><span class="priority-title">${e(item.title)}</span><span class="priority-description">${e(item.launch_name)} · ${e(item.description)}</span>${item.deadline?`<span class="priority-date">Échéance : ${e(item.deadline)}</span>`:''}</span><span class="priority-side"><span class="priority-label ${e(item.priority)}">${e(label)}</span>${icon('arrow')}</span></button>`;
+ return `<button type="button" class="priority-item" data-workspace-launch="${e(item.launch_id)}" data-workspace-area="${e(item.area)}" data-workspace-folder="${e(item.folder||'')}" data-workspace-document="${e(item.document_id||'')}" data-workspace-version="${e(item.version_id||'')}"><span class="priority-dot ${e(item.priority)}"></span><span class="priority-content"><span class="priority-title">${e(item.title)}</span><span class="priority-description">${e(item.launch_name)} · ${e(item.description)}</span>${item.deadline?`<span class="priority-date">Échéance : ${e(item.deadline)}</span>`:''}</span><span class="priority-side"><span class="priority-label ${e(item.priority)}">${e(label)}</span>${icon('arrow')}</span></button>`;
 }
 function prioritySummary(report){
  if(!report)return '';
@@ -17,7 +17,10 @@ function bindPriorityWidget(){
  app.querySelectorAll('[data-workspace-launch]').forEach(button=>button.addEventListener('click',async()=>{
    const launchId=button.dataset.workspaceLaunch;
    const area=button.dataset.workspaceArea;
-   try{await openLaunch(launchId,area==='mail'?'rose':state.folder);focusWorkspaceArea(area)}catch(err){showErr(err)}
+   try{if(typeof opsOpenTarget==='function')await opsOpenTarget({launch_id:launchId,area,
+       folder:button.dataset.workspaceFolder||(area==='mail'?'rose':state.folder),
+       document_id:button.dataset.workspaceDocument||null,version_id:button.dataset.workspaceVersion||null});
+     else{await openLaunch(launchId,area==='mail'?'rose':state.folder);focusWorkspaceArea(area)}}catch(err){showErr(err)}
  }));
 }
 function focusWorkspaceArea(area){

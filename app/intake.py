@@ -12,6 +12,7 @@ MAX_PAGES = 3
 MAX_IMAGE_PIXELS = 12_000_000
 
 KINDS = (
+    ("Calcul du besoin", "jaune", ("calcul du besoin", "besoin matiere", "besoin matière", "besoins matière", "material requirement")),
     ("Facture", "vert", ("facture", "invoice", "montant ht", "montant ttc", "total ttc")),
     ("Bon de livraison", "rose", ("bon de livraison", "bl n°", "delivery note", "bon livraison")),
     ("Bon de réception", "rose", ("bon de réception", "bon de reception", "réception matière", "reception matiere")),

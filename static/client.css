@@ -1,0 +1,9 @@
+.client-shell{max-width:1100px;margin:0 auto;padding:28px 24px;min-width:0}
+.client-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:24px;border-bottom:1px solid #e1e6ed;margin-bottom:28px}
+.client-header strong{display:block;font-size:19px;letter-spacing:1px;color:#0e2a5a}.client-header small{color:#5b6c84;display:block;margin-top:6px}
+.client-login{max-width:480px;margin:40px auto}.client-login h1{font-size:25px;color:#0e2a5a}
+.client-shell input,.client-shell textarea,.client-shell select{max-width:100%}
+.client-message{padding:12px;background:#eef3f9;margin:12px 0;color:#0e2a5a}
+.client-error{background:#fff1ee;color:#8f3525}.client-upload{padding:14px;border:1px dashed #9fb3ce;margin:18px 0;display:grid;gap:12px}
+.client-shell .ops-link-row{background:transparent}.client-shell a{color:#1d4f91}
+@media(max-width:600px){.client-shell{padding:20px 16px}.client-header{align-items:flex-start;flex-wrap:wrap}.client-shell .two-fields{display:block}}

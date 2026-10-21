@@ -18,6 +18,7 @@ from . import models, completeness_models, workflow_models, quality_models, inta
 from . import spec_models, mail_models, impact_sim_models, orli_models, material_models # noqa: F401
 from . import approval_models, sharing_models, pilot_models # noqa: F401
 from . import client_models # noqa: F401
+from . import internal_models # noqa: F401
 
 # Include the migration ledger in SQLAlchemy metadata so test databases that
 # reset Base.metadata also reset this ledger; production upgrades remain explicit.
@@ -25,7 +26,7 @@ MIGRATION_TABLE = Table('schema_migrations', Base.metadata,
                         Column('version', String(80), primary_key=True),
                         Column('applied_at', String(50), nullable=False), extend_existing=True)
 
-REVISIONS = ('0001_baseline', '0002_launch_scope', '0003_pilot_reports', '0004_client_space')
+REVISIONS = ('0001_baseline', '0002_launch_scope', '0003_pilot_reports', '0004_client_space', '0005_internal_operations')
 
 
 def _versions(conn):
@@ -42,9 +43,9 @@ def migrate():
         legacy = ('launches' in tables and
                   'restricted' not in {c['name'] for c in inspect(probe).get_columns('launches')})
         has_migrations = 'schema_migrations' in tables
-        pending_pilot = has_migrations and '0003_pilot_reports' not in {
-            v for v, in probe.execute(text('SELECT version FROM schema_migrations'))}
-    if legacy or pending_pilot:
+        pending = has_migrations and set(REVISIONS).difference({
+            v for v, in probe.execute(text('SELECT version FROM schema_migrations'))})
+    if legacy or pending:
         saved = backup_sqlite()
         if saved:
             print('Sauvegarde automatique avant migration :', saved)
@@ -62,7 +63,8 @@ def migrate():
                 # Old 0.14 installations must contain the complete pre-0.15 schema.
                 later_tables = {'schema_migrations', 'launch_members', 'pilot_reports',
                                 'client_accounts', 'client_order_requests',
-                                'client_order_documents', 'client_order_document_versions'}
+                                'client_order_documents', 'client_order_document_versions',
+                                'launch_operations', 'internal_document_comments', 'internal_experience_notes'}
                 missing = (set(Base.metadata.tables) - later_tables) - existing
                 if missing:
                     raise RuntimeError('Base antérieure incomplète : tables manquantes : ' + ', '.join(sorted(missing)))
@@ -97,6 +99,11 @@ def migrate():
                 Base.metadata.tables[table_name].create(bind=conn, checkfirst=True)
             conn.execute(text('INSERT INTO schema_migrations VALUES (:v, :d)'),
                          {'v':'0004_client_space','d':datetime.now(timezone.utc).isoformat()})
+        if '0005_internal_operations' not in done:
+            for table_name in ('launch_operations', 'internal_document_comments', 'internal_experience_notes'):
+                Base.metadata.tables[table_name].create(bind=conn, checkfirst=True)
+            conn.execute(text('INSERT INTO schema_migrations VALUES (:v, :d)'),
+                         {'v':'0005_internal_operations','d':datetime.now(timezone.utc).isoformat()})
         # Defensive consistency check: pre-0.15 historical tables stay untouched.
         cols = {c['name'] for c in inspect(conn).get_columns('launches')}
         if 'restricted' not in cols or 'launch_members' not in inspect(conn).get_table_names():

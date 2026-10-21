@@ -1,5 +1,11 @@
 # Framatex — Dossier jaune numérique (MVP 0.19)
 
+> **Livraison 0.20 — pilotage interne du Dossier Jaune.** Dashboard métier,
+> commandes, recherche documentaire, audit filtré, commentaires de version,
+> mémoire interne et consultation des demandes Client. Migration additive
+> `0005_internal_operations`. Installation, recette, endpoints et limites :
+> [Espace FRAMATEX](docs/ESPACE_FRAMATEX.md) · [Version 0.20](VERSION_0.20.md).
+
 > **Version 0.19 — interface blanche, accents bleus et nouvel espace Framatex Assist.** Tableau de bord, navigation, bibliothèque documentaire et assistant harmonisés. [Détails](VERSION_0.19.md). Aucune migration supplémentaire.
 
 > **Version 0.18 — refonte visuelle sombre inspirée des interfaces documentaires SaaS.** Tableau de bord restructuré, barre latérale, fiches et assistant conversationnel (toujours fondé sur des règles locales). [Détails](VERSION_0.18.md). Aucune migration supplémentaire.

@@ -42,7 +42,8 @@ def _source_folder(db: Session, version_id: str | None) -> str | None:
 
 
 def _add(out: list, launch: Launch, *, kind: str, title: str, description: str, rank: int,
-         area: str, action: str, item_id: str, deadline: str | None = None):
+         area: str, action: str, item_id: str, deadline: str | None = None,
+         folder: str | None = None, document_id: str | None = None, version_id: str | None = None):
     out.append({"id": f"{kind}:{item_id}", "launch_id": launch.id,
                 "launch_name": launch.name, "kind": kind, "title": title,
                 "description": description, "rank": rank,
@@ -50,7 +51,8 @@ def _add(out: list, launch: Launch, *, kind: str, title: str, description: str, 
                 "priority_reason": ("Échéance dépassée" if rank == 0 else
                     "Vérification documentaire ou métier requise" if rank == 1 else
                     "Action à suivre"),
-                "area": area, "action": action, "deadline": deadline})
+                "area": area, "action": action, "deadline": deadline,
+                "folder": folder, "document_id": document_id, "version_id": version_id})
 
 
 @router.get("/api/workspace/priorities")
@@ -77,9 +79,10 @@ def priorities(user: User = Depends(get_current_user), db: Session = Depends(get
             _add(items, launch, kind=kind,
                  title=("Pièce manquante : " if kind == "missing" else "Validation à obtenir : ") + row["title"],
                  description=f"Sous-dossier {row['folder'].capitalize()} · {row['document_type']}",
-                 rank=1, area="documents", action="open_launch", item_id=row["id"])
+                 rank=1, area="documents", action="open_launch", item_id=row["id"],
+                 folder=row["folder"], document_id=row["documents"][0]["id"] if row["documents"] else None)
         alerts = db.scalars(select(ImpactAlert).where(ImpactAlert.launch_id == launch.id,
-                                                      ImpactAlert.status == "to_review")).all()
+                                                      ImpactAlert.status.in_(["to_review", "action_required"]))).all()
         for alert in alerts:
             rule = db.get(ImpactRule, alert.rule_id)
             if not rule or not (permitted(user,"document.read",rule.source_folder)
@@ -87,7 +90,8 @@ def priorities(user: User = Depends(get_current_user), db: Session = Depends(get
                 continue
             _add(items, launch, kind="impact", title="Modification à examiner : " + rule.name,
                  description=rule.instruction[:210], rank=1, area="workflow",
-                 action="open_launch", item_id=alert.id)
+                 action="open_launch", item_id=alert.id, folder=rule.target_folder,
+                 version_id=alert.source_ref_id if rule.source_kind == "document" else None)
         for req in db.scalars(select(ClientRequirement).where(ClientRequirement.launch_id == launch.id)).all():
             source_folder = _source_folder(db, req.source_version_id)
             evidence_folder = _source_folder(db, req.evidence_version_id)
@@ -131,6 +135,8 @@ def priorities(user: User = Depends(get_current_user), db: Session = Depends(get
                      description=f"Engagement {('en retard' if overdue else 'à suivre')} · {commitment.responsible[:100]}",
                      rank=0 if overdue else 2, area="mail", action="open_launch",
                      item_id=commitment.id, deadline=commitment.due_date)
+    from .internal_service import extra_actions
+    items.extend(extra_actions(db, user, visible_launches))
     items.sort(key=lambda row: (row["rank"], row["deadline"] or "9999-12-31",
                                 row["launch_name"].casefold(),row["id"]))
     counts = {"urgent":sum(i["priority"] == "urgent" for i in items),
