@@ -35,7 +35,7 @@ REVISIONS = ('0001_baseline', '0002_launch_scope', '0003_pilot_reports', '0004_c
              '0008_optional_rules', '0009_visible_checklist_duplicates', '0010_document_intake',
              '0011_business_memory', '0012_document_intelligence', '0012b_document_search',
              '0013_access_management', '0014_business_memory_folder_access',
-             '0015_document_soft_deletion', '0016_order_sheet')
+             '0015_document_soft_deletion', '0016_order_sheet', '0017_optional_documents')
 
 
 def _versions(conn):
@@ -79,7 +79,7 @@ def migrate():
                                 'pending_document_uploads', 'document_identifications',
                                 'business_partners', 'business_partner_aliases', 'launch_partners',
                                 'internal_experience_decisions', 'collaborator_profiles',
-                                'launch_assignments', 'legacy_access_proposals'}
+                                'launch_assignments', 'legacy_access_proposals', 'optional_document_cases'}
                 missing = (set(Base.metadata.tables) - later_tables) - existing
                 if missing:
                     raise RuntimeError('Base antérieure incomplète : tables manquantes : ' + ', '.join(sorted(missing)))
@@ -251,6 +251,25 @@ def migrate():
                 conn.execute(text(f'CREATE INDEX IF NOT EXISTS {name} ON {table} ({column})'))
             conn.execute(text('INSERT INTO schema_migrations VALUES (:v, :d)'),
                          {'v':'0016_order_sheet','d':datetime.now(timezone.utc).isoformat()})
+        if '0017_optional_documents' not in done:
+            # Documents complémentaires facultatifs : table des cases et rattachement additif des documents.
+            conn.execute(text("""CREATE TABLE IF NOT EXISTS optional_document_cases (
+              id VARCHAR(36) PRIMARY KEY,
+              launch_id VARCHAR(36) NOT NULL REFERENCES launches(id),
+              folder_slug VARCHAR(12) NOT NULL,
+              title VARCHAR(160) NOT NULL,
+              description TEXT,
+              created_by VARCHAR(36) NOT NULL REFERENCES users(id),
+              created_at DATETIME NOT NULL,
+              updated_at DATETIME,
+              deleted_at DATETIME,
+              deleted_by VARCHAR(36) REFERENCES users(id))"""))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_optional_document_cases_launch_folder ON optional_document_cases (launch_id, folder_slug)'))
+            if 'optional_case_id' not in {c['name'] for c in inspect(conn).get_columns('documents')}:
+                conn.execute(text('ALTER TABLE documents ADD COLUMN optional_case_id VARCHAR(36) REFERENCES optional_document_cases(id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_documents_optional_case_id ON documents (optional_case_id)'))
+            conn.execute(text('INSERT INTO schema_migrations VALUES (:v, :d)'),
+                         {'v':'0017_optional_documents','d':datetime.now(timezone.utc).isoformat()})
         # Defensive consistency check: pre-0.15 historical tables stay untouched.
         cols = {c['name'] for c in inspect(conn).get_columns('launches')}
         if 'restricted' not in cols or 'launch_members' not in inspect(conn).get_table_names():

@@ -41,7 +41,9 @@ function stageDocument(url, folder, file, onProgress, onAnalysis) {
 
 async function documentUploadDialog(options) {
   const launch = state.detail;
-  const folders = launch.folders.filter(item => item.can_read && item.can_write);
+  // Case de documents complémentaires : sous-dossier et type fixés, titre libre, plusieurs fichiers possibles.
+  const optionalCase = options.optionalCase || null;
+  const folders = launch.folders.filter(item => item.can_read && item.can_write && (!optionalCase || item.slug === optionalCase.folder));
   const start = folders.find(item => item.slug === (options.folder || state.folder)) || folders[0];
   if (!start) { toast('Vous ne pouvez pas déposer dans cette commande.'); return; }
   const [{mib}, catalog] = await Promise.all([api('/api/workspace/upload-limits'), api('/api/workspace/document-types')]);
@@ -49,11 +51,11 @@ async function documentUploadDialog(options) {
   const rules = state.completeness?.rows || [];
   const base = `/api/launches/${encodeURIComponent(launch.id)}/document-uploads`;
   const fixed = Boolean(options.ruleId || options.document);
-  const initialType = options.document?.doc_type || options.type || '';
-  const initialTitle = options.document?.title || options.title || '';
-  modal(options.document ? 'Déposer une nouvelle version' : 'Déposer des documents', `
+  const initialType = optionalCase ? 'Document complémentaire' : options.document?.doc_type || options.type || '';
+  const initialTitle = optionalCase ? '' : options.document?.title || options.title || '';
+  modal(options.document ? 'Déposer une nouvelle version' : optionalCase ? `Déposer · ${optionalCase.title}` : 'Déposer des documents', `
     <form id="ops-upload-form" class="dj-upload" novalidate>
-      <p class="du-context">${e(launch.order_ref || launch.name)} · ${djFolderTitle(start.slug)}${fixed ? ` · ${e(initialTitle || initialType)}` : ''}</p>
+      <p class="du-context">${e(launch.order_ref || launch.name)} · ${djFolderTitle(start.slug)}${fixed ? ` · ${e(initialTitle || initialType)}` : ''}${optionalCase ? ` · Documents complémentaires facultatifs · ${e(optionalCase.title)}` : ''}</p>
       <div class="du-drop" id="ops-upload-drop">
         ${icon('upload')}<strong>Glissez vos fichiers ici</strong>
         <input id="ops-file" type="file" hidden accept="${Object.keys(mib).join(',')}" ${options.document ? '' : 'multiple'}>
@@ -66,7 +68,7 @@ async function documentUploadDialog(options) {
       <div id="ops-analysis" aria-live="polite"></div>
       <div id="du-metadata" ${fixed ? 'hidden' : ''}>
         <div class="two-fields"><div class="field"><label for="ops-folder">Sous-dossier</label><select id="ops-folder">${folders.map(item => `<option value="${item.slug}">${djFolderTitle(item.slug)} · ${e(DJ_FOLDERS[item.slug].name)}</option>`).join('')}</select></div>
-        <div class="field"><label for="ops-type">Type documentaire</label><input id="ops-type" list="ops-types" maxlength="100" autocomplete="off"><datalist id="ops-types"></datalist></div></div>
+        <div class="field"><label for="ops-type">Type documentaire</label><input id="ops-type" list="ops-types" maxlength="100" autocomplete="off"${optionalCase ? ' readonly' : ''}><datalist id="ops-types"></datalist></div></div>
         <div class="field"><label for="ops-title">Titre affiché</label><input id="ops-title" maxlength="220"></div>
       </div>
       <details class="du-optional-note"><summary>+ Ajouter une note facultative</summary><div class="field"><label for="ops-upload-comment">Note liée à cette version</label><textarea id="ops-upload-comment" maxlength="2000" rows="2" placeholder="Préciser la raison du dépôt ou une modification importante…"></textarea></div></details>
@@ -130,16 +132,18 @@ async function documentUploadDialog(options) {
     const classification = data.classification;
     const proposal = classification.suggestions[0];
     const selectedType = type.value.trim();
-    const conflict = classification.decisive && selectedType && (proposal.canonical_type !== selectedType || proposal.folder !== folder.value);
-    const matches = classification.decisive && !conflict && Boolean(selectedType);
-    const unavailable = !classification.decisive;
+    // Case complémentaire : le choix de la case vaut classement (hors checklist standard).
+    const conflict = !optionalCase && classification.decisive && selectedType && (proposal.canonical_type !== selectedType || proposal.folder !== folder.value);
+    const matches = Boolean(optionalCase) || (classification.decisive && !conflict && Boolean(selectedType));
+    const unavailable = !optionalCase && !classification.decisive;
     get('#du-justification-field').hidden = matches;
     const detectedOrder = data.fields.find(field => field.key === 'reference_commande' && field.status !== 'ambiguous');
-    const message = conflict ? `Le document déposé semble être un ${proposal.doc_type}, alors que la pièce attendue est « ${selectedType} ».`
+    const message = optionalCase ? `Document complémentaire facultatif « ${optionalCase.title} » : il ne remplace aucune pièce de la checklist standard.`
+      : conflict ? `Le document déposé semble être un ${proposal.doc_type}, alors que la pièce attendue est « ${selectedType} ».`
       : unavailable ? 'Type à vérifier. Les indices disponibles ne permettent pas de confirmer le classement.'
       : matches ? 'Le type détecté correspond au classement sélectionné.' : 'Confirmez le classement proposé ou choisissez un type.';
     const reason = data.warnings.join(' · ');
-    const canMove = proposal && classification.decisive && !options.document && !matches;
+    const canMove = !optionalCase && proposal && classification.decisive && !options.document && !matches;
     const relationships = data.relationships || [];
     const related = options.document
       ? relationships.find(item => item.candidate_document_id === options.document.id) || relationships[0]
@@ -230,7 +234,7 @@ async function documentUploadDialog(options) {
       if (closed || active !== current) { await removeStage(data); return; }
       staged = data;
       active.status = 'Prêt à vérifier';
-      if (!title.value.trim()) title.value = type.value.trim() || active.file.name.replace(/\.[^.]+$/, '').slice(0, 220);
+      if (!title.value.trim()) title.value = (optionalCase ? '' : type.value.trim()) || active.file.name.replace(/\.[^.]+$/, '').slice(0, 220);
       drawFiles();
       drawAnalysis();
       submit.disabled = false;
@@ -302,7 +306,7 @@ async function documentUploadDialog(options) {
         confirm_type: Boolean(get('#du-confirm-type')?.checked),
         relationship_action: relationshipChoice || null,
         relationship_candidate_version_id: related?.candidate_version_id || null,
-        relationship_reason: relationshipReason,
+        relationship_reason: relationshipReason, optional_case_id: optionalCase?.id || null,
       })});
       if (existing) existing.latest = accepted.latest;
       else writable.push(accepted);
@@ -346,6 +350,7 @@ async function documentUploadDialog(options) {
   get('#du-cancel-file').onclick = () => cancelFile().catch(showErr);
   get('#du-retry').onclick = () => { if (active) active.status = 'En attente'; processNext(); };
   folder.onchange = updateDestination;
+  if (optionalCase) folder.disabled = true;
   type.oninput = updateDestination;
   defaultDestination();
   get('#du-browse').focus();

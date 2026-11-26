@@ -112,4 +112,7 @@ Object.assign(OPS_AUDIT_LABELS, Object.fromEntries(Object.entries({
   'intake.classification.confirm': 'Classement confirmé', 'intake.classification.publish': 'Classement publié', 'value.record': 'Valeur extraite confirmée',
   'completeness.validate': 'Validation de pièce', 'document.relationship.decide': 'Décision de rapprochement', 'document.duplicate.review': 'Doublon examiné',
   'client.shared_document.published': 'Partage avec le client', 'client.shared_document.revoked': 'Retrait du partage client',
+  'optional_case.create': 'Case complémentaire créée', 'optional_case.update': 'Case complémentaire modifiée',
+  'optional_case.delete': 'Case complémentaire supprimée', 'optional_case.restore': 'Case complémentaire restaurée',
+  'optional_case.attach': 'Document complémentaire déposé',
 }).filter(([key]) => !OPS_AUDIT_LABELS[key])));

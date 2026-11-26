@@ -37,23 +37,32 @@ def main():
         db.commit()
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
-    server = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'app.main:app', '--port', str(port)], cwd=ROOT, env=os.environ.copy(),
-                              stdout=(out / 'server.log').open('w'), stderr=subprocess.STDOUT)
-    try:
-        import httpx
+    import httpx
+    servers = []
+
+    def start():
+        servers.append(subprocess.Popen([sys.executable, '-m', 'uvicorn', 'app.main:app', '--port', str(port)], cwd=ROOT, env=os.environ.copy(),
+                                        stdout=(out / 'server.log').open('a'), stderr=subprocess.STDOUT))
         for _ in range(150):
             try:
-                if httpx.get(f'http://127.0.0.1:{port}/api/health').status_code == 200: break
+                if httpx.get(f'http://127.0.0.1:{port}/api/health').status_code == 200: return
             except httpx.TransportError:
                 time.sleep(.1)
-        checks = run(f'http://127.0.0.1:{port}', pw, out)
+        raise RuntimeError('Serveur de recette indisponible')
+
+    def restart():
+        servers[-1].terminate(); servers[-1].wait(timeout=15); start()
+
+    start()
+    try:
+        checks = run(f'http://127.0.0.1:{port}', pw, out, restart)
     finally:
-        server.terminate()
+        servers[-1].terminate()
     (out / 'results.json').write_text(json.dumps({'status': 'passed', 'checks': checks}, ensure_ascii=False, indent=2))
     print('\n'.join('OK  ' + c for c in checks)); print(f'{len(checks)} vérifications réussies.')
 
 
-def run(base, pw, out):
+def run(base, pw, out, restart):
     import httpx
     from playwright.sync_api import sync_playwright, expect
     from windows_runtime import browser_executable
@@ -233,9 +242,66 @@ def run(base, pw, out):
         expect(page.locator('button.dj-folder')).to_have_count(4)
         assert copy['id'] not in [d['id'] for d in documents('bleu')]
         checks.append('Clic « Tous les sous-dossiers » pendant une actualisation : pris en compte, non écrasé par la réponse plus ancienne')
+        # ------------------------------------------------------------ 3. Documents complémentaires facultatifs
+        open_folder('rose')
+        section = page.locator('[data-folder-panel="rose"] .dj-optional-docs')
+        expect(section).to_contain_text('Documents complémentaires facultatifs')
+        expect(section.locator('#dj-optional-form')).to_be_visible()                      # visible même sans case
+        page.click('#dj-folders-back')
+        missing_before = page.locator('.dj-tally-item.is-missing strong').inner_text()
+        open_folder('rose')
+        page.fill('#dj-optional-title', 'Photos du prototype'); page.fill('#dj-optional-description', 'Vues face et dos')
+        page.click('#dj-optional-form button[value="now"]')
+        expect(page.get_by_role('dialog', name='Déposer · Photos du prototype')).to_be_visible()
+        page.locator('#ops-file').set_input_files([{'name': 'prototype-face.pdf', 'mimeType': 'application/pdf', 'buffer': pdf(f'Prototype face {tag}')},
+                                                   {'name': 'prototype-dos.pdf', 'mimeType': 'application/pdf', 'buffer': pdf(f'Prototype dos {tag}')}])
+        for _ in range(2):
+            expect(page.locator('#ops-analysis')).to_contain_text('Document complémentaire facultatif')
+            expect(page.locator('#du-confirm-type')).to_have_count(0)
+            if page.locator('#du-relationship-action').count():
+                page.select_option('#du-relationship-action', 'new_document')
+            with page.expect_response(lambda r: r.url.endswith('/publish')) as published:
+                page.click('#ops-upload-form [type=submit]')
+            assert published.value.status == 201 and published.value.json()['doc_type'] == 'Document complémentaire'
+        expect(page.locator('#du-files')).to_contain_text('Déposé · V1')
+        page.click('#cancel-modal')
+        expect(page.locator('body[aria-busy="true"]')).to_have_count(0)
+        case = page.locator('.dj-optional-case', has_text='Photos du prototype')
+        expect(case.locator('.dj-row')).to_have_count(2)                                # sans actualisation manuelle
+        expect(case).to_contain_text('Vues face et dos')
+        page.fill('#dj-optional-title', 'Échange atelier'); page.click('#dj-optional-form button[value="later"]')
+        empty = page.locator('.dj-optional-case', has_text='Échange atelier')
+        expect(empty).to_contain_text('Aucun document pour l’instant')
+        page.screenshot(path=str(out / '05-documents-complementaires.png'), full_page=True)
+        page.click('#dj-folders-back')
+        assert page.locator('.dj-tally-item.is-missing strong').inner_text() == missing_before
+        open_folder('rose')
+        checks.append('Rose : section permanente, case créée puis deux documents déposés ; case vide « Échange atelier » ; compteur de pièces manquantes inchangé')
+        empty.locator('[data-optional-edit]').click()
+        page.fill('#dj-optional-edit-title', 'Échanges avec l’atelier'); page.click('#dj-optional-edit-form [type=submit]')
+        expect(page.locator('.dj-optional-case', has_text='Échanges avec l’atelier')).to_be_visible()
+        page.locator('.dj-optional-case', has_text='Échanges avec l’atelier').locator('[data-optional-delete]').click()
+        page.click('#dj-optional-delete-form [type=submit]')
+        expect(page.locator('.dj-optional-case', has_text='Échanges avec l’atelier')).to_have_count(0)
+        expect(case.locator('[data-optional-delete]')).to_have_count(0)                # case non vide : non supprimable
+        checks.append('Case renommée puis supprimée (vide) ; une case contenant des documents ne propose pas la suppression')
+        case.locator('[data-history]').first.click()
+        expect(page.locator('.modal .dv-layout')).to_be_visible()
+        expect(page.locator('.modal')).to_contain_text('Document complémentaire')
+        expect(page.locator('.modal #ops-version-upload')).to_be_visible()
+        page.locator('#close-modal').click()
+        checks.append('Document complémentaire : visionneuse, versions et actions de tout document')
+        open_folder('bleu')
+        page.fill('#dj-optional-title', 'Certificat d’origine (copie)'); page.click('#dj-optional-form button[value="later"]')
+        expect(page.locator('.dj-optional-case', has_text='Certificat d’origine')).to_be_visible()
+        restart()
+        page.reload(); page.wait_for_load_state('networkidle')
+        open_order(f'FIA-{tag}'); open_folder('rose')
+        expect(page.locator('.dj-optional-case', has_text='Photos du prototype').locator('.dj-row')).to_have_count(2)
+        checks.append('Persistance après redémarrage du serveur : cases et documents complémentaires conservés')
         page.click('#logout') if page.locator('#logout').count() else page.click('[data-fx-exit], .fx-exit')
 
-        # ------------------------------------------------------------ 3. Recherche du technicien
+        # ------------------------------------------------------------ 4. Recherche du technicien
         context.clear_cookies()
         login('tech.fiabilite@example.test', tech_pw)
         page.click('[data-view="launches"]')
@@ -260,6 +326,14 @@ def run(base, pw, out):
         expect(page.locator('[data-folder-panel="bleu"]')).to_be_visible()
         expect(page.locator('h1')).to_have_text('Sous-dossier bleu')
         checks.append('Résultat avec sous-dossier sélectionné : ouverture directe du sous-dossier bleu autorisé')
+        bleu_section = page.locator('[data-folder-panel="bleu"] .dj-optional-docs')
+        expect(bleu_section).to_contain_text('Certificat d’origine')
+        expect(bleu_section.locator('#dj-optional-form')).to_have_count(0)
+        expect(bleu_section.locator('[data-optional-upload], [data-optional-edit], [data-optional-delete]')).to_have_count(0)
+        assert all(f['optional_cases'] == [] for f in page.context.request.get(f'/api/launches/{lid}').json()['folders'] if f['slug'] == 'rose')
+        page.click('[data-dj-folder="jaune"]')
+        expect(page.locator('[data-folder-panel="jaune"] #dj-optional-form')).to_be_visible()
+        checks.append('Technicien : case du bleu en lecture seule, aucune case du rose non attribué, création possible dans le jaune (dépôt autorisé)')
         page.click('[data-acc-view="myfolders"]')
         expect(page.locator('#ts-folders')).to_be_visible()
         page.fill('#ts-folders-q', 'gris anthracite'); page.click('#ts-folders [type=submit]')

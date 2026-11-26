@@ -171,7 +171,7 @@ def version_out(v: DocumentVersion):
 def doc_out(d: Document):
     versions = sorted((v for v in d.versions if v.deleted_at is None), key=lambda v: v.number)
     outs = [version_out(v) for v in versions]          # « latest » = même entrée que dans « versions » (droits compris)
-    return {"id": d.id, "title": d.title, "doc_type": d.doc_type, "folder": d.folder.slug, "created_at": d.created_at.isoformat(), "versions": outs, "latest": outs[-1] if outs else None}
+    return {"id": d.id, "title": d.title, "doc_type": d.doc_type, "folder": d.folder.slug, "created_at": d.created_at.isoformat(), "versions": outs, "latest": outs[-1] if outs else None, "optional_case_id": d.optional_case_id}
 
 
 class LoginPayload(BaseModel):
@@ -339,6 +339,8 @@ def launch_detail(launch_id: str, user: User = Depends(get_current_user), db: Se
     l = get_launch(db, launch_id)
     from .access_control import ACCESS_LEVEL_LABELS, ACTION_KEYS, access_level
     folders = []
+    from .optional_documents import folder_cases
+    cases = folder_cases(db, user, l.id)
     for slug, label in FOLDERS:
         folder = next((f for f in l.folders if f.slug == slug), None)
         docs = [] if not folder or not permitted(user, "document.read", slug) else [
@@ -360,7 +362,7 @@ def launch_detail(launch_id: str, user: User = Depends(get_current_user), db: Se
                         "can_value": permitted(user, "value.write", slug), "can_quality": permitted(user, "quality.review", slug),
                         "can_review": permitted(user, "document.review", slug), "access_level": level,
                         "access_label": ACCESS_LEVEL_LABELS[level],
-                        "documents": docs})
+                        "documents": docs, "optional_cases": cases.get(slug, []) if permitted(user, "document.read", slug) else []})
     return {**launch_out(l), "folders": folders, "can_update": permitted(user, "launch.update"), "can_manage_access": is_admin(user)}
 
 @app.patch("/api/launches/{launch_id}")
@@ -458,7 +460,7 @@ async def store_upload(file: UploadFile):
 
 
 @app.post("/api/launches/{launch_id}/documents", status_code=201)
-async def upload_document(launch_id: str, folder: str = Form(...), title: str = Form(...), doc_type: str = Form("Autre"), comment: str = Form("", max_length=2000), file: UploadFile = File(...), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def upload_document(launch_id: str, folder: str = Form(...), title: str = Form(...), doc_type: str = Form("Autre"), comment: str = Form("", max_length=2000), file: UploadFile = File(...), optional_case_id: str | None = Form(None), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     must(user, "launch.read")
     if folder not in SLUGS:
         raise HTTPException(422, "Sous-dossier invalide")
@@ -467,8 +469,16 @@ async def upload_document(launch_id: str, folder: str = Form(...), title: str = 
     entity = next((f for f in launch.folders if f.slug == folder), None)
     if entity is None or not title.strip() or len(title) > 220 or len(doc_type) > 100:
         raise HTTPException(422, "Métadonnées invalides")
+    from .optional_documents import OPTIONAL_TYPE, attach
+    case = attach(db, user, launch_id, folder, optional_case_id)
     stored = await store_upload(file)
-    return await save_direct_upload(db, user, stored, entity, title, doc_type, comment)
+    result = await save_direct_upload(db, user, stored, entity, title, OPTIONAL_TYPE if case else doc_type, comment)
+    if case:
+        db.get(Document, result["id"]).optional_case_id = case.id
+        audit(db, user, "optional_case.attach", "document", result["id"], {"case": case.id, "title": case.title})
+        db.commit()
+        result["optional_case_id"] = case.id
+    return result
 
 
 def persist_document(db, user, stored, entity, title, doc_type, comment, identification=None):
@@ -936,3 +946,7 @@ app.include_router(order_sheet_router)
 # Visionneuse documentaire : aperçus rendus côté serveur sous contrôle des droits.
 from .document_preview import router as document_preview_router
 app.include_router(document_preview_router)
+
+# Documents complémentaires facultatifs (0017_optional_documents).
+from .optional_documents import router as optional_documents_router
+app.include_router(optional_documents_router)

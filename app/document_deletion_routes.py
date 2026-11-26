@@ -141,6 +141,8 @@ def restore_document(document_id: str, user: User = Depends(get_current_user), d
         raise HTTPException(404, 'Document supprimé introuvable')
     document.deleted_at = document.deleted_by = document.deletion_reason = None
     audit(db, user, 'document.restore', 'document', document.id, {})
+    from .optional_documents import restore_case_of
+    restore_case_of(db, user, document)
     _update_after_change(db, document, max(_active_versions(document), key=lambda item: item.number, default=None))
     db.commit()
     return {'restored': 'document', 'id': document.id}

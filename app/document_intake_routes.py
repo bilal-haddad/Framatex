@@ -35,6 +35,7 @@ class PublishUpload(BaseModel):
     relationship_action: str | None = None
     relationship_candidate_version_id: str | None = None
     relationship_reason: str = Field(default='', max_length=1800)
+    optional_case_id: str | None = None
 
 
 class VerifyType(BaseModel):
@@ -139,6 +140,12 @@ def publish_document(launch_id: str, upload_id: str, payload: PublishUpload,
     destination(db, user, launch_id, staged.folder)
     entity = destination(db, user, launch_id, payload.folder)
     title, doc_type = payload.title.strip(), payload.doc_type.strip()
+    from .optional_documents import OPTIONAL_TYPE, attach
+    case = attach(db, user, launch_id, payload.folder, payload.optional_case_id)
+    if case:
+        if payload.rule_id:
+            raise HTTPException(422, 'Une pièce complémentaire ne remplace pas une exigence standard')
+        doc_type = OPTIONAL_TYPE                    # jamais une exigence standard sans reclassement explicite
     if not title or not doc_type:
         raise HTTPException(422, 'Titre et type documentaire obligatoires')
     if payload.rule_id:
@@ -178,7 +185,8 @@ def publish_document(launch_id: str, upload_id: str, payload: PublishUpload,
     justification = payload.justification.strip()
     # The explicit confirmation checkbox, not a free-text motive, records the
     # human classification decision. A reason remains optional in the audit.
-    confirmed = payload.confirm_type and status in {'to_verify', 'incompatible'}
+    # Le choix d'une case complémentaire est une décision humaine de classement.
+    confirmed = (payload.confirm_type or bool(case)) and status in {'to_verify', 'incompatible'}
     identified = {'analysis': analysis, 'status': 'confirmed' if confirmed else status,
                   'justification': justification or None, 'reviewed_by': user.id if confirmed else None}
     stored = (staged.original_name, staged.disk_name, staged.size, staged.sha256, staged.content_type)
@@ -186,6 +194,10 @@ def publish_document(launch_id: str, upload_id: str, payload: PublishUpload,
     try:
         result = (persist_version(db, user, stored, document, payload.comment, identified) if document else
                   persist_document(db, user, stored, entity, title, doc_type, payload.comment, identified))
+        if case and not document:
+            db.get(Document, result['id']).optional_case_id = case.id
+            result['optional_case_id'] = case.id
+            audit(db, user, 'optional_case.attach', 'document', result['id'], {'case': case.id, 'title': case.title})
         if payload.relationship_action:
             latest_id = result['latest']['id']
             evidence = selected['evidence_signature'] if selected else staged.sha256

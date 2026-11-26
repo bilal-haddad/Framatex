@@ -406,7 +406,8 @@ function djDocumentsPanel() {
   const duplicates = djDuplicateIndex();
   const rows = djSortedRows(folder.slug);
   const used = new Set(rows.flatMap(r => r.documents.slice(0, 1).map(x => x.id)));
-  const others = (folder.documents || []).filter(doc => !used.has(doc.id));
+  // Pièces complémentaires : rangées dans leur case, jamais dans « Autres pièces ».
+  const others = (folder.documents || []).filter(doc => !used.has(doc.id) && !doc.optional_case_id);
   const configured = state.completeness?.configured;
   const checklist = rows.length
     ? `<div class="dj-table-wrap"><table class="dj-checklist"><caption class="sr-only">Checklist ${e(meta.name)}</caption>
@@ -419,10 +420,7 @@ function djDocumentsPanel() {
     ? `<section class="dj-others"><h3>Autres pièces du sous-dossier</h3><div class="dj-table-wrap"><table class="dj-checklist dj-other-table">
         <colgroup><col class="dj-c-doc"><col class="dj-c-state"><col class="dj-c-ver"><col class="dj-c-date"><col class="dj-c-act"></colgroup>
         <thead><tr><th scope="col">Document</th><th scope="col">Type</th><th scope="col">Dernière version</th><th scope="col">Date</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
-        <tbody>${others.map(doc => { const group = duplicates.get(doc.id);
-          return `<tr class="dj-row${group ? ' is-duplicate' : ''}" data-doc="${e(doc.id)}"${group ? ' data-state="duplicate"' : ''}><td data-label="Document"><strong>${e(doc.title)}</strong><small>${e(doc.latest.original_name)}${group ? ` · ${djDuplicateHint(group, [doc.id])}` : ''}</small></td>
-          <td data-label="Type">${group ? djStatePill('duplicate') : e(doc.doc_type)}</td><td data-label="Dernière version">V${doc.latest.number}</td><td data-label="Date">${niceDate(doc.latest.created_at)}</td>
-          <td class="dj-action" data-label="Action"><span class="dj-action-group">${group ? `<button class="secondary tiny dj-dup-btn" data-dj-duplicate="${e(group.sha256)}">Examiner le doublon</button>` : `<button class="secondary tiny" data-history="${e(doc.id)}">Ouvrir</button>`}<button class="link" data-bm-passport="${e(doc.latest.id)}">Passeport numérique</button></span></td></tr>`; }).join('')}</tbody></table></div></section>`
+        <tbody>${others.map(doc => djOtherRow(doc, duplicates)).join('')}</tbody></table></div></section>`
     : '';
   const expected = rows.filter(r => r.required !== false).length;
   const phase = rows.length ? ` · ${expected} pièce${expected > 1 ? 's' : ''} obligatoire${expected > 1 ? 's' : ''}${rows.length > expected ? `, ${rows.length - expected} facultative${rows.length - expected > 1 ? 's' : ''}` : ''}` : '';
@@ -433,7 +431,119 @@ function djDocumentsPanel() {
         <progress aria-label="Complétude du sous-dossier" max="${stats.due || 1}" value="${stats.present}"></progress>
         <p>Checklist documentaire${phase}</p></div>
         ${folder.can_write ? `<div id="ops-folder-drop" class="dj-drop"><button type="button" class="primary" id="upload-doc">${icon('upload')} Déposer des documents</button></div>` : ''}</div>
-      ${checklist}${otherTable}</div>`;
+      ${checklist}${otherTable}${djOptionalSection(folder, docs, duplicates)}</div>`;
+}
+
+// Ligne d'une pièce hors checklist (autres pièces, documents complémentaires).
+function djOtherRow(doc, duplicates) {
+  const group = duplicates.get(doc.id);
+  return `<tr class="dj-row${group ? ' is-duplicate' : ''}" data-doc="${e(doc.id)}"${group ? ' data-state="duplicate"' : ''}><td data-label="Document"><strong>${e(doc.title)}</strong><small>${e(doc.latest.original_name)}${group ? ` · ${djDuplicateHint(group, [doc.id])}` : ''}</small></td>
+    <td data-label="Type">${group ? djStatePill('duplicate') : e(doc.doc_type)}</td><td data-label="Dernière version">V${doc.latest.number}</td><td data-label="Date">${niceDate(doc.latest.created_at)}</td>
+    <td class="dj-action" data-label="Action"><span class="dj-action-group">${group ? `<button class="secondary tiny dj-dup-btn" data-dj-duplicate="${e(group.sha256)}">Examiner le doublon</button>` : `<button class="secondary tiny" data-history="${e(doc.id)}">Ouvrir</button>`}<button class="link" data-bm-passport="${e(doc.latest.id)}">Passeport numérique</button></span></td></tr>`;
+}
+
+// « Documents complémentaires facultatifs » : section permanente de chaque sous-dossier, même vide.
+// Les cases sont propres à la commande et au sous-dossier ; elles ne sont jamais « manquantes » et
+// n'entrent pas dans la complétude. Leurs documents suivent les règles de tout document.
+function djOptionalSection(folder, docs, duplicates) {
+  const cases = folder.optional_cases || [];
+  const cards = cases.map(item => {
+    const rows = item.document_ids.map(id => docs.get(id)).filter(Boolean);
+    return `<article class="dj-optional-case" data-optional-case="${e(item.id)}">
+      <header class="dj-optional-case-head"><div><h4>${e(item.title)}</h4>${item.description ? `<p>${e(item.description)}</p>` : ''}
+        <small>Facultatif · ${rows.length} document${rows.length > 1 ? 's' : ''} · créée par ${e(item.created_by || '—')} le ${niceDate(item.created_at)}</small></div>
+        <span class="dj-action-group">${folder.can_write ? `<button class="secondary tiny" type="button" data-optional-upload="${e(item.id)}">${icon('upload')} Déposer</button>` : ''}${item.can_edit ? `<button class="link" type="button" data-optional-edit="${e(item.id)}">Modifier</button>` : ''}${item.can_delete ? `<button class="link" type="button" data-optional-delete="${e(item.id)}">Supprimer la case</button>` : ''}</span></header>
+      ${rows.length ? `<div class="dj-table-wrap"><table class="dj-checklist dj-other-table"><caption class="sr-only">${e(item.title)}</caption>
+        <colgroup><col class="dj-c-doc"><col class="dj-c-state"><col class="dj-c-ver"><col class="dj-c-date"><col class="dj-c-act"></colgroup>
+        <thead><tr><th scope="col">Document</th><th scope="col">Type</th><th scope="col">Dernière version</th><th scope="col">Date</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+        <tbody>${rows.map(doc => djOtherRow(doc, duplicates)).join('')}</tbody></table></div>`
+        : `<p class="dj-muted">Aucun document pour l’instant${folder.can_write ? ' : déposez-le maintenant ou plus tard.' : '.'}</p>`}
+    </article>`;
+  }).join('');
+  const add = folder.can_write ? `<form class="dj-optional-add" id="dj-optional-form" novalidate>
+      <h4>Ajouter un document facultatif</h4>
+      <div class="two-fields"><div class="field"><label for="dj-optional-title">Nom du document</label><input id="dj-optional-title" maxlength="160" required placeholder="Ex. Photos du prototype"></div>
+        <div class="field"><label for="dj-optional-description">Description <span class="dj-optional">(facultative)</span></label><input id="dj-optional-description" maxlength="1000"></div></div>
+      <div class="dj-optional-actions"><button type="submit" class="secondary" value="later">Créer la case</button><button type="submit" class="primary" value="now">${icon('upload')} Créer et déposer</button></div>
+    </form>` : '';
+  return `<section class="dj-optional-docs" aria-labelledby="dj-optional-title-${e(folder.slug)}">
+      <div class="dj-optional-intro"><h3 id="dj-optional-title-${e(folder.slug)}">Documents complémentaires facultatifs</h3>
+        <p>Pièces propres à cette commande, hors checklist standard : une case vide n’est jamais signalée comme manquante et ne compte pas dans la complétude.</p></div>
+      ${cards || (folder.can_write ? '' : '<p class="dj-muted">Aucun document complémentaire dans ce sous-dossier.</p>')}${add}
+    </section>`;
+}
+
+function djFindCase(id) {
+  for (const folder of state.detail.folders) {
+    const found = (folder.optional_cases || []).find(item => item.id === id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function djBindOptional() {
+  const form = app.querySelector('#dj-optional-form');
+  form?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const submit = event.submitter || form.querySelector('[type=submit]');
+    const title = form.querySelector('#dj-optional-title').value.trim();
+    if (!title) { toast('Nommez le document complémentaire.'); form.querySelector('#dj-optional-title').focus(); return; }
+    if (submit.disabled) return;
+    form.querySelectorAll('button').forEach(button => { button.disabled = true; });
+    try {
+      const created = await api(`/api/launches/${encodeURIComponent(state.detail.id)}/optional-cases`, {method: 'POST',
+        body: JSON.stringify({folder: state.folder, title, description: form.querySelector('#dj-optional-description').value})});
+      toast(`Case « ${created.title} » ajoutée`);
+      await openLaunch(state.detail.id, null, {keep: true});
+      if (submit.value === 'now') await dossierUpload({folder: created.folder, optionalCase: created});
+    } catch (error) {
+      showErr(error);
+      if (form.isConnected) form.querySelectorAll('button').forEach(button => { button.disabled = false; });
+    }
+  });
+  app.querySelectorAll('[data-optional-upload]').forEach(button => button.addEventListener('click', () => {
+    const item = djFindCase(button.dataset.optionalUpload);
+    if (item) dossierUpload({folder: item.folder, optionalCase: item}).catch(showErr);
+  }));
+  app.querySelectorAll('[data-optional-edit]').forEach(button => button.addEventListener('click', () => {
+    const item = djFindCase(button.dataset.optionalEdit);
+    if (!item) return;
+    modal('Modifier la case', `<form id="dj-optional-edit-form" novalidate>
+        <div class="field"><label for="dj-optional-edit-title">Nom du document</label><input id="dj-optional-edit-title" maxlength="160" required value="${e(item.title)}"></div>
+        <div class="field"><label for="dj-optional-edit-description">Description <span class="dj-optional">(facultative)</span></label><textarea id="dj-optional-edit-description" maxlength="1000" rows="2">${e(item.description || '')}</textarea></div>
+        <div class="modal-actions"><button class="secondary" type="button" id="cancel-modal">Annuler</button><button class="primary" type="submit">Enregistrer</button></div></form>`);
+    overlay.querySelector('#cancel-modal').onclick = closeModal;
+    overlay.querySelector('#dj-optional-edit-form').onsubmit = async event => {
+      event.preventDefault();
+      const submit = event.target.querySelector('[type=submit]');
+      if (submit.disabled) return;
+      submit.disabled = true;
+      try {
+        await api(`/api/optional-cases/${encodeURIComponent(item.id)}`, {method: 'PATCH', body: JSON.stringify({
+          title: val('dj-optional-edit-title'), description: overlay.querySelector('#dj-optional-edit-description').value})});
+        closeModal(); toast('Case modifiée');
+        await openLaunch(state.detail.id, null, {keep: true});
+      } catch (error) { submit.disabled = false; showErr(error); }
+    };
+  }));
+  app.querySelectorAll('[data-optional-delete]').forEach(button => button.addEventListener('click', () => {
+    const item = djFindCase(button.dataset.optionalDelete);
+    if (!item) return;
+    modal('Supprimer la case', `<form id="dj-optional-delete-form"><p class="modal-desc">La case vide « ${e(item.title)} » sera retirée de ce sous-dossier. L’opération est conservée dans l’historique.</p>
+        <div class="modal-actions"><button class="secondary" type="button" id="cancel-modal">Annuler</button><button class="primary" type="submit">Supprimer la case</button></div></form>`);
+    overlay.querySelector('#cancel-modal').onclick = closeModal;
+    overlay.querySelector('#dj-optional-delete-form').onsubmit = async event => {
+      event.preventDefault();
+      const submit = event.target.querySelector('[type=submit]');
+      if (submit.disabled) return;
+      submit.disabled = true;
+      try {
+        await api(`/api/optional-cases/${encodeURIComponent(item.id)}`, {method: 'DELETE'});
+        closeModal(); toast('Case supprimée');
+        await openLaunch(state.detail.id, null, {keep: true});
+      } catch (error) { submit.disabled = false; showErr(error); }
+    };
+  }));
 }
 
 // --------------------------------------------------------------------------- modules annexes
@@ -615,6 +725,7 @@ function djBind() {
   }));
   app.querySelectorAll('[data-history]').forEach(button => button.addEventListener('click', () => openVersions(button.dataset.history)));
   app.querySelectorAll('[data-dj-duplicate]').forEach(button => button.addEventListener('click', () => djDuplicateModal(button.dataset.djDuplicate)));
+  djBindOptional();
   app.querySelector('#ops-add-note')?.addEventListener('click', () => operationsAddNote(d.id));
   app.querySelector('#dj-open-request')?.addEventListener('click', () => operationsClientRequest(state.operationsDetail.client_request.id).catch(showErr));
   opsBindDrop(app.querySelector('#ops-folder-drop'), file => dossierUpload({folder: state.folder, file}).catch(showErr));

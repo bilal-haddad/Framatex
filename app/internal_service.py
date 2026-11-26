@@ -257,11 +257,14 @@ def activity(db, user, *, launch_id=None, document_id=None, actor_id=None, actio
                 continue
         else:
             from .access_control import launch_scope
+            # Case de documents complémentaires : portée = son seul sous-dossier.
+            case_folder = detail.get("folder") if event.target_type == "optional_document_case" and detail.get("folder") in FOLDER_LABELS else None
             with launch_scope(launch.id):
                 hidden = (not accessible(db, user, launch)
                           or (doc and not permitted(user, "document.read", doc.folder.slug))
+                          or (case_folder and not permitted(user, "document.read", case_folder))
                           # Une opération sur deux sous-dossiers n'est visible que si les deux le sont.
-                          or (not doc and not all(permitted(user, "document.read", slug) for slug in FOLDER_LABELS)))
+                          or (not doc and not case_folder and not all(permitted(user, "document.read", slug) for slug in FOLDER_LABELS)))
             if hidden:
                 continue
             if launch_id and launch.id != launch_id:
@@ -278,6 +281,6 @@ def activity(db, user, *, launch_id=None, document_id=None, actor_id=None, actio
                        "target_type": event.target_type, "target_id": event.target_id, "detail": detail,
                        "launch_id": launch.id if launch else None, "launch_name": launch.name if launch else None,
                        "document_id": doc.id if doc else None, "document_title": doc.title if doc else None,
-                       "folder": doc.folder.slug if doc else None,
+                       "folder": doc.folder.slug if doc else (detail.get("folder") if event.target_type == "optional_document_case" else None),
                        "version_id": version.id if version else None, "occurred_at": event.occurred_at.isoformat()})
     return {"total": len(output), "items": output[offset:offset + limit], "limit": limit, "offset": offset}

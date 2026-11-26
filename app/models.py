@@ -73,6 +73,8 @@ class Document(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     deletion_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Case « Documents complémentaires facultatifs » (NULL = pièce ordinaire du sous-dossier).
+    optional_case_id: Mapped[str | None] = mapped_column(ForeignKey("optional_document_cases.id"), nullable=True, index=True)
     folder: Mapped[Folder] = relationship(back_populates="documents")
     versions: Mapped[list[DocumentVersion]] = relationship(back_populates="document", cascade="all, delete-orphan", order_by="DocumentVersion.number")
 
@@ -117,3 +119,21 @@ class LaunchMember(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     granted_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class OptionalDocumentCase(Base):
+    """Case nommée « Documents complémentaires facultatifs » d'un sous-dossier d'une commande.
+    Hors checklist standard : une case vide n'est jamais « manquante » et ne compte pas dans la
+    complétude ; ses documents restent des documents ordinaires (versions, OCR, empreinte, doublons,
+    historique, droits du sous-dossier)."""
+    __tablename__ = "optional_document_cases"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    launch_id: Mapped[str] = mapped_column(ForeignKey("launches.id"), index=True)
+    folder_slug: Mapped[str] = mapped_column(String(12))
+    title: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
