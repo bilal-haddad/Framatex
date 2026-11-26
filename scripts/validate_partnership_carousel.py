@@ -15,7 +15,7 @@ def main():
     out = parser.parse_args().output.resolve()
     out.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, FRAMATEX_DATA_DIR=tempfile.mkdtemp(prefix='framat-carousel-'), FRAMATEX_SECRET_KEY=secrets.token_urlsafe(32))
-    env.pop('DATABASE_URL', None)
+    __import__('recette_db').use_isolated_database(env)
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
     server = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'app.main:app', '--port', str(port)], cwd=ROOT, env=env,

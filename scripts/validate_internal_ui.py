@@ -31,7 +31,7 @@ def main():
     # Les valeurs sont aléatoires et limitées à cette recette éphémère.
     with tempfile.TemporaryDirectory(prefix='framat-ui-') as temporary:
         os.environ['FRAMATEX_DATA_DIR'] = temporary
-        os.environ.pop('DATABASE_URL', None)
+        __import__('recette_db').use_isolated_database()
         os.environ['FRAMATEX_SECRET_KEY'] = secrets.token_urlsafe(48)
         os.environ.pop('FRAMATEX_COOKIE_SECURE', None)
         local_tessdata = Path('/workspace/.cache/framatex-tessdata')

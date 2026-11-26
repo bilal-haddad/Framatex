@@ -32,7 +32,11 @@ def main(argv=None):
         if command == 'check':
             with engine.connect() as conn:
                 extensions = set(conn.execute(text('SELECT extname FROM pg_extension')).scalars())
+                available = set(conn.execute(text('SELECT name FROM pg_available_extensions')).scalars())
             missing = {'unaccent', 'pg_trgm'} - extensions
+            # Préparation de l'IA (non utilisée aujourd'hui) : pgvector installable sur ce serveur ?
+            print('pgvector (futur RAG) :', 'activé' if 'vector' in extensions else 'disponible, non activé' if 'vector' in available
+                  else 'non installé sur ce serveur (image pgvector/pgvector:pg16 ou paquet postgresql-16-pgvector)')
             ok = current == head and not missing
             print('Extensions manquantes :', ', '.join(sorted(missing)) if missing else 'aucune')
             print('Vérification :', 'OK' if ok else 'ÉCHEC'); return 0 if ok else 1

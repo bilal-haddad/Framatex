@@ -112,7 +112,7 @@ def main():
     output = parser.parse_args().output.resolve(); output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="framat-cinematic-") as temporary:
         env = {**os.environ, "FRAMATEX_DATA_DIR": temporary, "FRAMATEX_SECRET_KEY": secrets.token_urlsafe(48)}
-        env.pop("DATABASE_URL", None)
+        __import__('recette_db').use_isolated_database(env)
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0)); port = sock.getsockname()[1]
         base = f"http://127.0.0.1:{port}"

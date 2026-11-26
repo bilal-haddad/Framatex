@@ -20,7 +20,7 @@ OUT = ROOT / 'data' / 'buttons-validation'
 def boot():
     sys.path.insert(0, str(ROOT)); sys.path.insert(0, str(ROOT / 'scripts'))
     os.environ.update(FRAMATEX_DATA_DIR=tempfile.mkdtemp(prefix='framat-boutons-'), FRAMATEX_SECRET_KEY=secrets.token_urlsafe(32))
-    os.environ.pop('DATABASE_URL', None)
+    __import__('recette_db').use_isolated_database()
     from app.core import SessionLocal, hash_password
     from app.models import Role, User
     from app.migrate import migrate

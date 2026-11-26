@@ -51,7 +51,7 @@ def server(output):
     import httpx
     with tempfile.TemporaryDirectory(prefix='framat-landing-motion-') as directory:
         env = {**os.environ, 'FRAMATEX_DATA_DIR': directory, 'FRAMATEX_SECRET_KEY': secrets.token_urlsafe(48)}
-        env.pop('DATABASE_URL', None)
+        __import__('recette_db').use_isolated_database(env)
         with socket.socket() as probe:
             probe.bind(('127.0.0.1', 0)); port = probe.getsockname()[1]
         with (output / 'server.log').open('w', encoding='utf-8') as log:

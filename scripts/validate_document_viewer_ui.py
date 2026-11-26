@@ -19,7 +19,7 @@ def main():
     out = parser.parse_args().output.resolve(); out.mkdir(parents=True, exist_ok=True)
     sys.path.insert(0, str(ROOT))
     os.environ.update(FRAMATEX_DATA_DIR=tempfile.mkdtemp(prefix='framat-viewer-'), FRAMATEX_SECRET_KEY=secrets.token_urlsafe(32))
-    os.environ.pop('DATABASE_URL', None)
+    __import__('recette_db').use_isolated_database()
     from app.core import SessionLocal, hash_password
     from app.models import Role, User
     from app.migrate import migrate

@@ -1,0 +1,126 @@
+{
+ "data_dir": "(temporaire)",
+ "launches": 200,
+ "results": {
+  "auth/me": {
+   "status": 200,
+   "median_ms": 5.6,
+   "p95_ms": 6.3,
+   "bytes": 279
+  },
+  "launch detail": {
+   "status": 200,
+   "median_ms": 19.7,
+   "p95_ms": 25.8,
+   "bytes": 19364
+  },
+  "completeness": {
+   "status": 200,
+   "median_ms": 16.9,
+   "p95_ms": 18.2,
+   "bytes": 8665
+  },
+  "operations": {
+   "status": 200,
+   "median_ms": 21.5,
+   "p95_ms": 25.1,
+   "bytes": 10306
+  },
+  "duplicates": {
+   "status": 200,
+   "median_ms": 10.2,
+   "p95_ms": 11.9,
+   "bytes": 2
+  },
+  "activity (commande)": {
+   "status": 200,
+   "median_ms": 41.3,
+   "p95_ms": 50.7,
+   "bytes": 25541
+  },
+  "reviews": {
+   "status": 200,
+   "median_ms": 23.8,
+   "p95_ms": 25.9,
+   "bytes": 2831
+  },
+  "quality": {
+   "status": 200,
+   "median_ms": 6.0,
+   "p95_ms": 6.2,
+   "bytes": 100
+  },
+  "approval-overview": {
+   "status": 200,
+   "median_ms": 23.0,
+   "p95_ms": 25.5,
+   "bytes": 2727
+  },
+  "dependency-graph": {
+   "status": 200,
+   "median_ms": 6.5,
+   "p95_ms": 7.4,
+   "bytes": 1309
+  },
+  "materials": {
+   "status": 200,
+   "median_ms": 6.3,
+   "p95_ms": 8.4,
+   "bytes": 142
+  },
+  "workspace/launches (liste)": {
+   "status": 200,
+   "median_ms": 2580.9,
+   "p95_ms": 2769.8,
+   "bytes": 439291
+  },
+  "search q=BENCH-0001": {
+   "status": 200,
+   "median_ms": 201.1,
+   "p95_ms": 331.7,
+   "bytes": 62195
+  },
+  "search q=pièce": {
+   "status": 200,
+   "median_ms": 210.4,
+   "p95_ms": 315.1,
+   "bytes": 59699
+  },
+  "dashboard général": {
+   "status": 200,
+   "median_ms": 3596.7,
+   "p95_ms": 3804.2,
+   "bytes": 2034548
+  },
+  "dashboard commande": {
+   "status": 200,
+   "median_ms": 60.5,
+   "p95_ms": 72.4,
+   "bytes": 24389
+  },
+  "activity (globale)": {
+   "status": 200,
+   "median_ms": 22.4,
+   "p95_ms": 24.1,
+   "bytes": 31830
+  },
+  "trash": {
+   "status": 200,
+   "median_ms": 4.7,
+   "p95_ms": 6.5,
+   "bytes": 12
+  },
+  "my-launches": {
+   "status": 200,
+   "median_ms": 146.2,
+   "p95_ms": 241.6,
+   "bytes": 85655
+  },
+  "document preview": {
+   "status": 200,
+   "median_ms": 11.3,
+   "p95_ms": 12.2,
+   "bytes": 274
+  }
+ }
+}

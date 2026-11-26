@@ -148,7 +148,7 @@ def main():
     os.environ.update(FRAMATEX_DATA_DIR=tempfile.mkdtemp(prefix='framat-charge-'), FRAMATEX_SECRET_KEY=secrets.token_urlsafe(32))
     # Base : DATABASE_URL si elle désigne PostgreSQL (base dédiée et vide), sinon SQLite temporaire.
     if not os.getenv('DATABASE_URL', '').startswith(('postgresql', 'postgres')):
-        os.environ.pop('DATABASE_URL', None)
+        __import__('recette_db').use_isolated_database()
     import psutil
     from app.core import SessionLocal, hash_password
     from app.models import Role, User

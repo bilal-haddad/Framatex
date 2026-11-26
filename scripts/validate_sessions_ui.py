@@ -30,7 +30,7 @@ def main():
     sys.path.insert(0, str(ROOT))
     with tempfile.TemporaryDirectory(prefix='framat-sessions-') as temporary:
         os.environ.update(FRAMATEX_DATA_DIR=temporary, FRAMATEX_SECRET_KEY=secrets.token_urlsafe(48))
-        os.environ.pop('DATABASE_URL', None)
+        __import__('recette_db').use_isolated_database()
         from app.core import SessionLocal, hash_password
         from app.models import Role, User
         from app.migrate import migrate

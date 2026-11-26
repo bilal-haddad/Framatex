@@ -1,0 +1,171 @@
+{
+ "config": {
+  "levels": [],
+  "sustain": [
+   50,
+   120
+  ],
+  "open_requests": 6,
+  "workers": 4,
+  "cpus": 4,
+  "memory_mb": 16087
+ },
+ "phases": [
+  {
+   "phase": "charge soutenue 120 s",
+   "users": 50,
+   "requests": 6756,
+   "wall_s": 127.4,
+   "rps": 53.0,
+   "mean_ms": 919,
+   "median_ms": 343,
+   "p95_ms": 3368,
+   "p99_ms": 7015,
+   "max_ms": 28950,
+   "errors": 0,
+   "error_rate": 0.0,
+   "sqlite_locked": 0,
+   "timeouts": 0,
+   "error_samples": [],
+   "operations": {
+    "connexion": {
+     "n": 50,
+     "median_ms": 514,
+     "p95_ms": 854,
+     "p99_ms": 872,
+     "errors": 0
+    },
+    "liste commandes": {
+     "n": 416,
+     "median_ms": 3067,
+     "p95_ms": 5717,
+     "p99_ms": 10335,
+     "errors": 0
+    },
+    "création commande": {
+     "n": 416,
+     "median_ms": 238,
+     "p95_ms": 651,
+     "p99_ms": 975,
+     "errors": 0
+    },
+    "ouverture commande (6 req.)": {
+     "n": 416,
+     "median_ms": 1291,
+     "p95_ms": 2972,
+     "p99_ms": 3426,
+     "errors": 0
+    },
+    "modification fiche": {
+     "n": 416,
+     "median_ms": 229,
+     "p95_ms": 624,
+     "p99_ms": 1357,
+     "errors": 0
+    },
+    "dépôt PDF (analyse/OCR)": {
+     "n": 416,
+     "median_ms": 1706,
+     "p95_ms": 3545,
+     "p99_ms": 4527,
+     "errors": 0
+    },
+    "publication PDF": {
+     "n": 416,
+     "median_ms": 319,
+     "p95_ms": 936,
+     "p99_ms": 1429,
+     "errors": 0
+    },
+    "dépôt Excel": {
+     "n": 416,
+     "median_ms": 2314,
+     "p95_ms": 5455,
+     "p99_ms": 6330,
+     "errors": 0
+    },
+    "dépôt Word": {
+     "n": 416,
+     "median_ms": 287,
+     "p95_ms": 828,
+     "p99_ms": 1401,
+     "errors": 0
+    },
+    "aperçu PDF": {
+     "n": 416,
+     "median_ms": 294,
+     "p95_ms": 717,
+     "p99_ms": 1194,
+     "errors": 0
+    },
+    "validation (décision)": {
+     "n": 416,
+     "median_ms": 224,
+     "p95_ms": 682,
+     "p99_ms": 1023,
+     "errors": 0
+    },
+    "aperçu Excel": {
+     "n": 416,
+     "median_ms": 344,
+     "p95_ms": 967,
+     "p99_ms": 1393,
+     "errors": 0
+    },
+    "recherche": {
+     "n": 416,
+     "median_ms": 420,
+     "p95_ms": 1263,
+     "p99_ms": 1644,
+     "errors": 0
+    },
+    "historique commande": {
+     "n": 416,
+     "median_ms": 254,
+     "p95_ms": 672,
+     "p99_ms": 1381,
+     "errors": 0
+    },
+    "suppression": {
+     "n": 416,
+     "median_ms": 199,
+     "p95_ms": 671,
+     "p99_ms": 1546,
+     "errors": 0
+    },
+    "restauration": {
+     "n": 416,
+     "median_ms": 190,
+     "p95_ms": 521,
+     "p99_ms": 769,
+     "errors": 0
+    },
+    "habilitations": {
+     "n": 416,
+     "median_ms": 224,
+     "p95_ms": 664,
+     "p99_ms": 1471,
+     "errors": 0
+    },
+    "tableau de bord": {
+     "n": 50,
+     "median_ms": 9832,
+     "p95_ms": 24812,
+     "p99_ms": 26088,
+     "errors": 0
+    }
+   },
+   "cpu_percent_mean": 229.0,
+   "cpu_percent_max": 569.0,
+   "rss_mb_max": 1406,
+   "available_mb_min": 13796
+  }
+ ],
+ "integrity": {
+  "launches_in_db": 416,
+  "creations_acknowledged": 416,
+  "audit_launch_create": 416,
+  "duplicate_names": 0,
+  "documents": 1248
+ }
+}

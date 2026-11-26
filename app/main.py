@@ -58,7 +58,13 @@ MIMES = {".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-off
 async def lifespan(app: FastAPI):
     from .migrate import migrate
     limits_mib()
-    from .core import IS_POSTGRES
+    from .core import IS_POSTGRES, engine as _engine
+    # Contre-pression : pas plus de traitements simultanés (fils de travail) que de connexions à la base
+    # par processus. Au-delà, une requête attend son tour au lieu d'échouer sur un pool épuisé.
+    import anyio.to_thread
+    pool_capacity = _engine.pool.size() + _engine.pool._max_overflow if hasattr(_engine.pool, "_max_overflow") else 40
+    threads = int(os.getenv("FRAMATEX_WORKER_THREADS", str(min(40, pool_capacity))))
+    anyio.to_thread.current_default_thread_limiter().total_tokens = max(4, threads)
     if IS_POSTGRES and os.getenv("FRAMATEX_AUTO_MIGRATE", "0") != "1":
         # PostgreSQL : migrations exécutées de façon contrôlée (python -m app.db upgrade), jamais par
         # chaque processus serveur ; démarrage refusé si le schéma n'est pas à jour.

@@ -37,7 +37,7 @@ def main():
     sys.path.insert(0, str(ROOT))
     with tempfile.TemporaryDirectory(prefix='framat-capture-') as temporary:
         os.environ['FRAMATEX_DATA_DIR'] = temporary
-        os.environ.pop('DATABASE_URL', None)
+        __import__('recette_db').use_isolated_database()
         os.environ['FRAMATEX_SECRET_KEY'] = secrets.token_urlsafe(48)
         from app.core import SessionLocal, hash_password
         from app.models import Role, User

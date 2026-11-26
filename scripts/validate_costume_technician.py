@@ -184,7 +184,7 @@ def main():
     output = args.output.resolve(); output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="framat-costume-") as temporary:
         os.environ["FRAMATEX_DATA_DIR"] = temporary
-        os.environ.pop("DATABASE_URL", None)
+        __import__('recette_db').use_isolated_database()
         os.environ["FRAMATEX_SECRET_KEY"] = secrets.token_urlsafe(48)
         sys.path.insert(0, str(ROOT))
         from app.core import SessionLocal, hash_password

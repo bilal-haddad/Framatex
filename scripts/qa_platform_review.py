@@ -146,7 +146,7 @@ def platform_server(qa):
     """
     with tempfile.TemporaryDirectory(prefix='framat-qa-') as tmp:
         env = {**os.environ, 'FRAMATEX_DATA_DIR': tmp, 'FRAMATEX_SECRET_KEY': secrets.token_urlsafe(48)}
-        env.pop('DATABASE_URL', None); env.pop('FRAMATEX_COOKIE_SECURE', None)
+        __import__('recette_db').use_isolated_database(env); env.pop('FRAMATEX_COOKIE_SECURE', None)
         os.environ.update({k: env[k] for k in ('FRAMATEX_DATA_DIR', 'FRAMATEX_SECRET_KEY')})
         sys.path.insert(0, str(ROOT))
         from app.migrate import migrate
