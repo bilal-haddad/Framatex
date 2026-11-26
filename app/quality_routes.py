@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from .active_documents import active_versions, current_version
 from .core import get_current_user, get_db, utcnow
 from .models import Document, DocumentVersion, Folder, User
 from .quality_models import DocumentDatum, CrossDocumentRule, QualityDecision, ExcelInspection
@@ -77,7 +78,7 @@ def save_datum(version_id:str,payload:DatumIn,user:User=Depends(get_current_user
     must(user,'document.read',doc.folder.slug)
     must(user,'value.write',doc.folder.slug)
     if payload.field_key not in QUALITY_FIELDS: raise HTTPException(422,'Champ métier inconnu')
-    if version.number != max(v.number for v in doc.versions):
+    if version is not current_version(doc):
         raise HTTPException(409,'La valeur doit être saisie sur la version courante')
     if db.scalar(select(DocumentDatum).where(DocumentDatum.document_version_id==version.id,
                                            DocumentDatum.field_key==payload.field_key)):
@@ -202,7 +203,7 @@ def list_excel_inspections(launch_id:str,user:User=Depends(get_current_user),db:
     rows=[]
     for doc in docs:
         if not (permitted(user,'document.read',doc.folder.slug) and permitted(user,'controls.read',doc.folder.slug)):continue
-        for v in doc.versions:
+        for v in active_versions(doc):
             if Path(v.original_name).suffix.lower()!='.xlsx': continue
             inspection=db.scalar(select(ExcelInspection).where(ExcelInspection.document_version_id==v.id))
             rows.append({'document_id':doc.id,'document_title':doc.title,'folder':doc.folder.slug,

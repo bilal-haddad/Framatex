@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, object_session
 
+from .active_documents import active_versions, current_version
 from .core import Base, COOKIE, DATA_DIR, ROOT, engine, get_current_user, get_db, hash_password, check_password, make_token, login_limit_key, login_attempt_allowed, record_login_failure, clear_login_failures, utcnow
 from .models import AuditEvent, Document, DocumentVersion, Folder, Launch, LaunchMember, Role, RolePermission, User
 from .completeness_models import CompletenessProfile, RequirementRule, LaunchCompleteness, RequirementValidation, RequirementException
@@ -478,15 +479,16 @@ def persist_document(db, user, stored, entity, title, doc_type, comment, identif
     result = persist_version(db, user, stored, doc, comment, identification)
     from .internal_uploads import duplicates
     matches = duplicates(db, user, launch.id, entity.slug, sha, exclude_id=doc.id)
+    history = duplicates(db, user, launch.id, entity.slug, sha, exclude_id=doc.id, historical=True)
     audit(db, user, "document.upload", "document", doc.id,
           {"launch": launch.id, "folder": entity.slug, "sha256": sha, "duplicate_count": len(matches)})
-    return {**result, "duplicates": matches}
+    return {**result, "duplicates": matches, "historical_matches": history}
 
 
 async def save_direct_upload(db, user, stored, entity, title, doc_type, comment, document=None):
     from .document_intake import assess_direct
     try:
-        previous = max(document.versions, key=lambda item: item.number, default=None) if document else None
+        previous = current_version(document) if document else None
         strict = bool(previous and db.get(DocumentIdentification, previous.id))
         identification = await run_in_threadpool(assess_direct, STORAGE / stored[1], stored[0], entity.slug, doc_type, strict)
         result = (persist_version(db, user, stored, document, comment, identification) if document else
@@ -790,9 +792,9 @@ def validate_requirement(launch_id: str, rule_id: str, payload: ValidationPayloa
     doc = get_doc(db, payload.document_id)
     if doc.folder.launch_id != launch.id or doc.folder.slug != rule.folder_slug or doc.doc_type != rule.document_type:
         raise HTTPException(422, "Document non conforme au type et au lancement de la règle")
-    if not doc.versions:
+    version = current_version(doc)
+    if version is None:
         raise HTTPException(422, "Document sans version")
-    version = max(doc.versions, key=lambda v: v.number)
     identification = db.get(DocumentIdentification, version.id)
     if identification and identification.status not in {'matched', 'confirmed'}:
         raise HTTPException(409, 'Vérifiez le type documentaire avant la validation métier')

@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .active_documents import active_versions, current_version
 from .core import get_db, get_current_user, utcnow
 from .models import Document, DocumentVersion, Role, User, Launch
 from .workflow_models import DocumentReview
@@ -58,9 +59,10 @@ def applicable_template(db: Session, doc: Document):
 
 
 def latest_version(doc: Document):
-    if not doc.versions:
+    version = current_version(doc)
+    if version is None:
         raise HTTPException(422, 'Aucune version documentaire')
-    return max(doc.versions, key=lambda v: v.number)
+    return version
 
 
 def can_decide(db: Session, user: User, run: ApprovalRun, doc: Document):
@@ -166,7 +168,7 @@ def get_approval_overview(launch_id: str, user: User = Depends(get_current_user)
         if not permitted(user,'document.read',folder.slug):
             continue
         for doc in folder.documents:
-            if not doc.versions:
+            if current_version(doc) is None:          # document supprimé : hors circuits actifs
                 continue
             version = latest_version(doc)
             template = applicable_template(db, doc)

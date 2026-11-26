@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from .active_documents import active_versions, current_version
 from .core import get_current_user, get_db
 from .document_intake import ALIASES, identification_status, normalized, read_safely
 from .document_intake_models import DocumentIdentification, PendingDocumentUpload
@@ -213,7 +214,7 @@ def verify_type(version_id: str, payload: VerifyType, user: User = Depends(get_c
     must(user, 'launch.read')
     must(user, 'document.read', document.folder.slug)
     must(user, 'quality.review', document.folder.slug)
-    if version.number != max(v.number for v in document.versions):
+    if version is not current_version(document):
         raise HTTPException(409, 'Vérifiez la version courante du document')
     item = db.get(DocumentIdentification, version_id)
     if not item or item.status not in {'to_verify', 'incompatible'}:

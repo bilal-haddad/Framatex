@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from .active_documents import active_versions, current_version
 from .access import accessible, visible
 from .approval_models import ApprovalRun
 from .completeness import evaluate
@@ -26,7 +27,7 @@ DOCUMENT_TYPES = {
 
 
 def document_state(db: Session, document: Document, version=None):
-    version = version or (max(document.versions, key=lambda v: v.number) if document.versions else None)
+    version = version or current_version(document)
     if not version:
         return "to_review"
     run = db.scalar(select(ApprovalRun).where(ApprovalRun.document_version_id == version.id)
@@ -88,9 +89,9 @@ def _launch_summary(db, user, launch):
         docs = folder.documents
         pending_ids = {d["id"] for row in rows if row["status"] == "pending_validation" for d in row["documents"]}
         for doc in docs:
-            if not doc.versions:
+            current = current_version(doc)
+            if current is None:
                 continue
-            current = max(doc.versions, key=lambda v: v.number)
             if db.scalar(select(ApprovalRun.id).where(ApprovalRun.document_version_id == current.id,
                                                       ApprovalRun.status == "pending").limit(1)):
                 pending_ids.add(doc.id)
@@ -154,9 +155,9 @@ def _extra_actions(db, user, launches):
             if not permitted(user, "document.read", folder.slug):
                 continue
             for doc in folder.documents:
-                if not doc.versions:
+                current = current_version(doc)
+                if current is None:
                     continue
-                current = max(doc.versions, key=lambda v: v.number)
                 pending_run = db.scalar(select(ApprovalRun).where(ApprovalRun.document_version_id == current.id,
                         ApprovalRun.status == "pending").limit(1))
                 if pending_run:
@@ -170,7 +171,8 @@ def _extra_actions(db, user, launches):
             if inspection and any(f["type"] != "inspection_limit" for f in inspection["findings"]):
                 # Une ancienne anomalie reste historique, pas une alerte sur la version actuelle.
                 doc = db.get(Document, row["document_id"])
-                if max(v.number for v in doc.versions) != row["version"]:
+                current = current_version(doc)
+                if current is None or current.number != row["version"]:
                     continue
                 items.append(action(launch, "excel:" + row["version_id"], "Excel à vérifier : " + row["document_title"],
                                     "Inspection statique ; examen humain requis", "quality", row["folder"],

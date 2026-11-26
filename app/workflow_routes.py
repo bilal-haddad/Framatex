@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .active_documents import active_versions, current_version
 from .core import get_db, get_current_user, utcnow
 from .models import Document, DocumentVersion, Folder, Launch, User
 from .workflow_models import DocumentReview, BusinessValueRevision, ImpactRule, ImpactAlert
@@ -60,7 +61,7 @@ def get_source(db: Session, launch_id: str, version_id: str):
     doc = db.get(Document, version.document_id)
     if not doc or doc.folder.launch_id != launch_id:
         raise HTTPException(422, 'La version ne relève pas de ce lancement')
-    if max(v.number for v in doc.versions) != version.number:
+    if version is not current_version(doc):
         raise HTTPException(409, 'Choisissez la version courante du document source')
     return version, doc
 
@@ -82,12 +83,12 @@ def list_reviews(launch_id: str, user: User = Depends(get_current_user), db: Ses
     documents = db.scalars(select(Document).join(Folder).where(Folder.launch_id == launch_id)).all()
     results = []
     for doc in documents:
-        if not permitted(user, 'document.read', doc.folder.slug) or not doc.versions:
+        version = current_version(doc)
+        if not permitted(user, 'document.read', doc.folder.slug) or version is None:
             continue
-        version = max(doc.versions, key=lambda v: v.number)
         current = latest_review(db, version.id)
         history = []
-        for v in sorted(doc.versions, key=lambda x: x.number, reverse=True):
+        for v in sorted(active_versions(doc), key=lambda x: x.number, reverse=True):
             decisions = db.scalars(select(DocumentReview).where(DocumentReview.document_version_id == v.id)
                 .order_by(DocumentReview.reviewed_at.desc())).all()
             history.extend(review_out(db, r, document=doc) for r in decisions)
@@ -106,13 +107,13 @@ def decide_document(doc_id: str, payload: ReviewPayload, user: User = Depends(ge
     must(user, 'launch.read')
     must(user, 'document.read', doc.folder.slug)
     must(user, 'document.review', doc.folder.slug)
-    if not doc.versions:
+    if current_version(doc) is None:
         raise HTTPException(422, 'Le document est vide')
     if payload.decision != 'approved' and len(payload.comment.strip()) < 12:
         raise HTTPException(422, 'La décision doit être motivée (12 caractères minimum)')
     # Un circuit configuré ne peut pas être contourné par l'approbation simple.
     from .approval_routes import applicable_template
-    version = max(doc.versions, key=lambda v: v.number)
+    version = current_version(doc)
     from .approval_models import ApprovalRun
     if applicable_template(db, doc) or db.scalar(select(ApprovalRun.id).where(
             ApprovalRun.document_version_id == version.id)):
@@ -142,7 +143,7 @@ def value_out(db: Session, revision: BusinessValueRevision):
     return {'id': revision.id, 'key': revision.key, 'label': VALUE_FIELDS[revision.key][0],
             'value': revision.value_text, 'unit': revision.unit, 'revision': revision.revision,
             'source_version_id': ver.id, 'document_id': doc.id, 'source_title': doc.title,
-            'source_version': ver.number, 'source_is_current': ver.id == max(doc.versions, key=lambda v: v.number).id,
+            'source_version': ver.number, 'source_is_current': ver is current_version(doc),
             'folder': doc.folder.slug, 'reason': revision.reason,
             'recorded_at': revision.recorded_at.isoformat(), 'recorded_by': revision.recorded_by}
 

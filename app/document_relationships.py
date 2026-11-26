@@ -97,6 +97,7 @@ def _candidate(sha256: str, analysis: dict, document, version, previous: dict) -
 def propose_relationships(db, user, launch, sha256: str, analysis: dict) -> list[dict]:
     """Ne retourne que les candidats que l'utilisateur est autorisé à lire."""
     from .main import permitted
+    from .active_documents import current_version
 
     proposals = []
     for folder in launch.folders:
@@ -106,9 +107,9 @@ def propose_relationships(db, user, launch, sha256: str, analysis: dict) -> list
                 and permitted(user, 'controls.read', folder.slug)):
             continue
         for document in folder.documents:
-            if not document.versions:
+            version = current_version(document)      # documents et versions supprimés exclus
+            if version is None:
                 continue
-            version = max(document.versions, key=lambda item: item.number)
             identification = db.get(DocumentIdentification, version.id)
             previous = identification.analysis if identification else {}
             item = _candidate(sha256, analysis, document, version, previous)

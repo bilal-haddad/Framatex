@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from typing import Literal
 
+from .active_documents import active_versions, current_version
 from .core import get_current_user, get_db, utcnow
 from .models import DocumentVersion, User
 from .spec_analysis import analyze_text
@@ -36,7 +37,8 @@ def _version(db:Session, version_id:str, launch_id:str, user:User, write=False):
 
 
 def _current(version:DocumentVersion):
-    return version.id == max(version.document.versions,key=lambda v:v.number).id
+    current = current_version(version.document)
+    return current is not None and version.id == current.id
 
 
 def _requirement(db:Session, rid:str, lid:str):

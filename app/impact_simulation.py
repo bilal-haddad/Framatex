@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from .active_documents import active_versions, current_version
 from .models import Document, DocumentVersion
 from .workflow_models import BusinessValueRevision, ImpactRule
 
@@ -70,7 +71,7 @@ def current_inputs(db: Session, launch_id: str):
             'source_version_id': row.source_version_id,
             'source_title': document.title,
             'source_folder': document.folder.slug,
-            'stale_source': version.number != max(v.number for v in document.versions),
+            'stale_source': version is not current_version(document),
         }
     return data
 

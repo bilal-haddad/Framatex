@@ -154,7 +154,7 @@ def safe_source(db, version):
 def authorized_source(db, user, version_id):
     from .main import must
     version = db.get(DocumentVersion, version_id)
-    if not version:
+    if not version or version.deleted_at is not None or version.document.deleted_at is not None:
         raise HTTPException(404, "Version interne introuvable")
     must(user, "launch.read")
     must_access(db, user, version.document.folder.launch_id)

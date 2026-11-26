@@ -305,7 +305,12 @@ def share_candidates(user: User = Depends(get_current_user), db: Session = Depen
     internal_user(user)
     output = []
     for version in db.scalars(select(DocumentVersion).order_by(DocumentVersion.created_at.desc())):
-        authorized_source(db, user, version.id)
+        if version.deleted_at is not None or version.document.deleted_at is not None:
+            continue                                   # pièce supprimée : jamais proposée au partage
+        try:
+            authorized_source(db, user, version.id)
+        except HTTPException:
+            continue                                   # commande ou sous-dossier non autorisé : ignoré, sans fuite
         if safe_source(db, version):
             output.append({"version_id": version.id, "title": version.document.title,
                            "document_type": version.document.doc_type, "version": version.number,

@@ -12,6 +12,7 @@ from collections import defaultdict
 
 from sqlalchemy import select
 
+from .active_documents import current_version
 from .completeness_models import DuplicateReview
 from .models import User
 
@@ -24,8 +25,8 @@ def duplicate_groups(db, user, launch):
                 and permitted(user, "controls.read", folder.slug)):
             continue
         for document in folder.documents:
-            if document.versions:
-                current = max(document.versions, key=lambda v: v.number)
+            current = current_version(document)      # documents et versions supprimés exclus
+            if current is not None:
                 by_digest[current.sha256].append((folder.slug, document, current))
     reviews = {}
     for review in db.scalars(select(DuplicateReview).where(DuplicateReview.launch_id == launch.id)

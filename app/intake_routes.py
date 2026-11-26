@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from .active_documents import active_versions, current_version
 from .core import get_db, get_current_user
 from .models import DocumentVersion, Document, User
 from .intake_models import ConfirmedField
@@ -165,7 +166,7 @@ def confirm_field(version_id:str,payload:ConfirmField,user:User=Depends(get_curr
     must(user,'document.read',doc.folder.slug)
     must(user,'value.write',doc.folder.slug)
     if payload.field_key not in PATTERNS:raise HTTPException(422,'Champ métier inconnu')
-    if not v==max(doc.versions,key=lambda x:x.number):raise HTTPException(409,'Une nouvelle version du document existe')
+    if v is not current_version(doc):raise HTTPException(409,'Une nouvelle version du document existe')
     item=ConfirmedField(document_version_id=v.id,field_key=payload.field_key,
           value=payload.value.strip(),unit=payload.unit.strip(),source_excerpt=payload.source_excerpt.strip(),confirmed_by=user.id)
     db.add(item)
