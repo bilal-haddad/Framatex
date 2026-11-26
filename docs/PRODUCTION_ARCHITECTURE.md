@@ -180,3 +180,19 @@ La configuration A ne doit pas être étendue au-delà de la capacité réelleme
   mémoire, compteurs `/metrics` par processus (agrégés par Prometheus), migration au démarrage de
   chaque processus (à sortir du `lifespan`), effacements de fichiers (déjà idempotents).
 - Aucun déploiement n'a été lancé dans le cadre de cette mission.
+
+## 12. Paramètres d'exploitation (ajoutés ou documentés dans cette branche)
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `FRAMATEX_ENV` | (vide) | `production` : documentation d'API masquée |
+| `FRAMATEX_API_DOCS` | `1` (`0` en production) | Forcer l'affichage de `/docs` |
+| `FRAMATEX_COOKIE_SECURE` | `0` | `1` derrière HTTPS : cookie `Secure` + HSTS |
+| `FRAMATEX_SQLITE_WAL` | `0` | `1` : journal WAL (plusieurs processus) ; sauvegarde par `backup_framatex.py` uniquement |
+| `FRAMATEX_SQLITE_FOREIGN_KEYS` | `0` | `1` : clés étrangères appliquées (après `foreign_key_check` sans violation) |
+| `FRAMATEX_DB_POOL_SIZE` / `FRAMATEX_DB_MAX_OVERFLOW` / `FRAMATEX_DB_POOL_TIMEOUT` | 20 / 20 / 30 | Pool de connexions par processus |
+| `FRAMATEX_ANALYSIS_CONCURRENCY` | 2 | Analyses/OCR simultanées par processus |
+| `FRAMATEX_API_BURST` / `FRAMATEX_API_RATE_PER_SECOND` | 400 / 40 | Limite des API métier par session (0 = désactivé) |
+| `FRAMATEX_ACCESS_LOG` | 1 | Journal d'accès JSON sur la sortie standard |
+| `FRAMATEX_METRICS_TOKEN` | (vide) | Active `/metrics` (en-tête `Authorization: Bearer …`) |
+| `FRAMATEX_RETENTION_POLICY` | `data/retention-policy.json` | Politique de conservation (années par type documentaire) |
