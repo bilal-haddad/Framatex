@@ -249,6 +249,25 @@ def activity(db, user, *, launch_id=None, document_id=None, actor_id=None, actio
         query = query.where(AuditEvent.occurred_at >= date_from)
     if date_to:
         query = query.where(AuditEvent.occurred_at < date_to)
+    if launch_id or document_id:
+        # Préfiltre SQL (sur-ensemble) : seuls les événements pouvant concerner cette commande ou ce
+        # document sont résolus ; la portée et les droits restent vérifiés un par un ci-dessous.
+        from sqlalchemy import or_
+        from .models import Folder, OptionalDocumentCase
+        if document_id:
+            doc_ids = [document_id]
+        else:
+            doc_ids = list(db.scalars(select(Document.id).join(Folder).where(Folder.launch_id == launch_id)))
+        version_ids = list(db.scalars(select(DocumentVersion.id).where(DocumentVersion.document_id.in_(doc_ids)))) if doc_ids else []
+        targets = {*doc_ids, *version_ids}
+        clauses = [AuditEvent.detail.like('%"version_id"%')]
+        if launch_id:
+            targets.add(launch_id)
+            targets.update(db.scalars(select(OptionalDocumentCase.id).where(OptionalDocumentCase.launch_id == launch_id)))
+            clauses.append(AuditEvent.detail.like(f'%{launch_id}%'))
+        ids = list(targets)
+        clauses += [AuditEvent.target_id.in_(ids[i:i + 500]) for i in range(0, len(ids), 500)]
+        query = query.where(or_(*clauses))
     output = []
     for event in db.scalars(query):
         launch, doc, version, detail = resolve_event(db, event)

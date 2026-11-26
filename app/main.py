@@ -523,7 +523,7 @@ async def new_version(doc_id: str, file: UploadFile = File(...), comment: str = 
 
 def persist_version(db, user, stored, doc, comment, identification=None):
     original, disk_name, size, sha, mime = stored
-    if any(v.sha256 == sha for v in doc.versions):
+    if any(v.sha256 == sha for v in active_versions(doc)):       # une version supprimée ne bloque pas un nouveau dépôt
         raise HTTPException(409, "Ce fichier est déjà conservé dans les versions de ce document")
     number = max((v.number for v in doc.versions), default=0) + 1
     version = DocumentVersion(number=number, original_name=original, disk_name=disk_name, size=size,

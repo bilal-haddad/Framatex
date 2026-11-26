@@ -308,7 +308,8 @@ async function documentUploadDialog(options) {
         relationship_candidate_version_id: related?.candidate_version_id || null,
         relationship_reason: relationshipReason, optional_case_id: optionalCase?.id || null,
       })});
-      if (existing) existing.latest = accepted.latest;
+      // Copie locale cohérente (liste et version courante ensemble) en attendant la relecture du serveur.
+      if (existing) Object.assign(existing, {latest: accepted.latest, versions: accepted.versions || [...(existing.versions || []), accepted.latest]});
       else writable.push(accepted);
       targetFolder = selectedFolder;
       active.status = `Déposé · V${accepted.latest.number}${['to_verify', 'incompatible'].includes(accepted.identification) ? ' · type à vérifier' : ''}`;

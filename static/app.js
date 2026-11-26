@@ -31,10 +31,13 @@ function niceDate(s){if(!s)return '—';const d=new Date(s.endsWith('Z')?s:s+'Z'
 function sizeText(n){return n>=1024*1024?`${(n/1024/1024).toFixed(1)} Mo`:`${Math.max(1,Math.ceil(n/1024))} Ko`}
 const app=document.querySelector('#app'), overlay=document.querySelector('#overlay-root');
 const state={me:null,view:'home',priorities:null,launches:[],dashboard:null,detail:null,completeness:null,completionProfiles:[],completenessPhases:[{code:'preparation',label:'Préparation'},{code:'approvisionnement',label:'Approvisionnement'},{code:'fabrication',label:'Fabrication'},{code:'expedition',label:'Expédition'},{code:'cloture',label:'Clôture'}],folder:'jaune',roles:[],users:[],audit:[],workflowReviews:[],workflowValues:[],workflowImpacts:[],workflowFields:[],workflowRules:[],qualityReport:null,excelInspections:[],specReport:null,mailReport:null,simGraph:null,simHistory:[],orliReconciliation:null,orliBatches:[],materials:null,approvalOverview:null,clientPublications:null,supplierRequests:null,approvalTemplates:[],approvalRoles:[],notifications:null,launchLoadWarnings:[],query:''};
-const fxPending=new Set();
-// Déconnexion : les requêtes encore en cours sont annulées, leurs suites ignorées sans message.
-function fxAbortPending(){for(const c of fxPending)c.abort('logout');fxPending.clear()}
+const fxPending=new Set();let fxClosing=false;
+// Déconnexion : les requêtes encore en cours sont annulées et aucune nouvelle requête (actualisation en
+// file d'attente, module chargé après coup) ne part avant la prochaine connexion.
+function fxAbortPending(){fxClosing=true;for(const c of fxPending)c.abort('logout');fxPending.clear()}
 async function api(path,options={}){
+  if(/\/api\/auth\/login$/.test(path))fxClosing=false;
+  else if(fxClosing&&!/\/api\/auth\/logout$/.test(path)){const cancelled=new Error('Session fermée');cancelled.cancelled=true;throw cancelled}
   const controller=new AbortController();fxPending.add(controller);
   const method=(options.method||'GET').toUpperCase();
   // Délais : lecture 20 s ; écriture 60 s (une écriture lente n'est pas abandonnée trop tôt) ; fichiers 120 s.

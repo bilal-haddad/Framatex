@@ -143,8 +143,10 @@ openLaunch = async function(id, folder = null, target = null) {
 function djRefreshOpenDocument() {
   const open = overlay.querySelector('.modal[data-doc-id]');
   if (!open) return;
-  const fields = [...open.querySelectorAll('textarea, input[type=text], input:not([type])')];
-  if (open.querySelector('textarea:focus, input:focus, select:focus') || fields.some(field => field.value.trim())) return;
+  // Saisie en cours = champ modifié par l'utilisateur (valeur différente de sa valeur initiale) ou actif.
+  const edited = [...open.querySelectorAll('textarea, input')].some(field => !['hidden', 'checkbox', 'radio', 'number', 'search'].includes(field.type)
+    && field.value !== field.defaultValue);
+  if (open.querySelector('textarea:focus, input:not([type=number]):focus, select:focus') || edited) return;
   const {docId, versionId} = open.dataset;
   const doc = findDoc(docId);
   if (!doc) { closeModal(); toast('Ce document a été supprimé entre-temps.'); return; }
@@ -152,9 +154,13 @@ function djRefreshOpenDocument() {
 }
 const djBaseDocument = operationsDocument;
 operationsDocument = async function(id, versionId = null) {
+  const detail = state.detail;
   await djBaseDocument(id, versionId);
   const box = overlay.querySelector('.modal');
   if (box && overlay.querySelector('#ops-version-diff, [data-ops-version]')) { box.dataset.docId = id; box.dataset.versionId = versionId || ''; }
+  // Commande relue pendant l'ouverture de la fiche : elle est redessinée avec l'état courant
+  // (après la fin des compléments de la fiche, visionneuse et historique).
+  if (box?.dataset.docId === id && state.detail !== detail) setTimeout(() => { if (box.isConnected) djRefreshOpenDocument(); }, 0);
 };
 
 // Retour sur l'onglet après au moins 15 s : la commande affichée est relue (sans changer d'écran,

@@ -180,3 +180,16 @@ def test_latest_version_carries_delete_right():
     new_version(c, doc['id'], 'a.pdf', pdf(f'B {uuid.uuid4().hex}'))
     listed = next(d for f in c.get(f'/api/launches/{lid}').json()['folders'] for d in f['documents'] if d['id'] == doc['id'])
     assert listed['latest'] == listed['versions'][-1] and listed['latest']['can_delete'] is True
+
+
+def test_redeposit_content_of_deleted_version():
+    c = chef()
+    lid = c.post('/api/order-sheets', headers=H, json={'name': f'Redépôt {uuid.uuid4().hex[:6]}'}).json()['id']
+    doc = upload(c, lid, 'jaune', 'a.pdf', pdf(f'A {uuid.uuid4().hex}'))
+    content = pdf(f'B {uuid.uuid4().hex}')
+    v2 = new_version(c, doc['id'], 'b.pdf', content)
+    r = c.post(f"/api/documents/{doc['id']}/versions", headers=H, files={'file': ('b.pdf', content, 'application/pdf')})
+    assert r.status_code == 409                                                   # identique à une version active
+    delete(c, f"/api/document-versions/{v2['latest']['id']}")
+    again = new_version(c, doc['id'], 'b.pdf', content)                         # la version supprimée ne bloque plus
+    assert again['latest']['number'] == 3

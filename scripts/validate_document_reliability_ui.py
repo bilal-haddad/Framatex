@@ -168,7 +168,7 @@ def run(base, pw, out, restart):
         open_folder('rose'); rose = deposit('Fiche rose', same)
         expect(page.locator(f'[data-folder-panel="rose"] .dj-row[data-doc="{rose["id"]}"]')).to_have_attribute('data-state', 'duplicate')
         assert overview_duplicates() == 1 and len(duplicate_groups()) == 1
-        page.screenshot(path=str(out / '01-doublon-detecte.png'))
+        page.screenshot(path=str(out / '01-doublon-detecte.png'), animations='disabled')
         checks.append('Même PDF déposé en Jaune puis en Rose (clics) : « Doublon détecté » et compteur 1, sans actualisation')
         open_folder('jaune'); delete_document(jaune['id'])
         assert overview_duplicates() == 0 and duplicate_groups() == []
@@ -185,7 +185,7 @@ def run(base, pw, out, restart):
         assert bleu['id'] not in {jaune['id'], rose['id']}
         expect(page.locator(f'.dj-row[data-doc="{bleu["id"]}"]')).not_to_have_attribute('data-state', 'duplicate')
         assert overview_duplicates() == 0 and duplicate_groups() == []
-        page.screenshot(path=str(out / '02-depot-bleu-sans-faux-doublon.png'))
+        page.screenshot(path=str(out / '02-depot-bleu-sans-faux-doublon.png'), animations='disabled')
         checks.append('Suppression des deux pièces puis dépôt en Bleu : aucun faux doublon')
 
         # Suppression d'une version seule : la copie de la V2 n'est plus un doublon courant.
@@ -213,6 +213,33 @@ def run(base, pw, out, restart):
         checks.append('Nouvelle version par « Déposer une nouvelle version » puis suppression de la V2 : la copie identique n’est plus un doublon')
 
         # ------------------------------------------------------------ 2. Synchronisation sans F5
+        # Validation métier : « En validation » → « Présent et conforme », compteurs relus du serveur.
+        def tally(kind):
+            page.click('#dj-folders-back') if page.locator('#dj-folders-back').count() else None
+            return int(page.locator(f'.dj-tally-item.is-{kind} strong').first.inner_text())
+        present, pending = tally('ok'), tally('pending')
+        open_folder('jaune')
+        row = page.locator('.dj-checklist:not(.dj-other-table) tr').filter(has=page.get_by_text('Fiche d’emploi', exact=True))
+        row.get_by_role('button', name='Déposer').click()
+        page.locator('#ops-file').set_input_files({'name': 'fiche-emploi.pdf', 'mimeType': 'application/pdf', 'buffer': pdf(f'FICHE D EMPLOI {tag}')})
+        expect(page.locator('#ops-analysis')).not_to_be_empty()
+        if page.locator('#du-relationship-action').count():
+            page.select_option('#du-relationship-action', 'new_document')
+        if page.locator('#du-confirm-type').count():
+            page.check('#du-confirm-type')
+        page.click('#ops-upload-form [type=submit]')
+        expect(row).to_contain_text('En validation métier')
+        assert tally('pending') == pending + 1
+        open_folder('jaune')
+        row.locator('[data-complete-validate]').click()
+        page.click('#approve-form [type=submit]')
+        expect(row).to_contain_text('Présent et conforme')
+        expect(page.locator('body[aria-busy="true"]')).to_have_count(0)
+        assert tally('pending') == pending and tally('ok') == present + 1
+        server_counts = api.get(f'/api/launches/{lid}/completeness').json()['counts']
+        assert server_counts['present'] == present + 1 and server_counts['pending_validation'] == pending
+        checks.append('Dépôt « Fiche d’emploi » puis « Valider » : « En validation » puis « Présent et conforme », compteurs présents/à valider égaux au serveur, sans F5')
+
         # Dépôt concurrent par un autre utilisateur, puis retour sur l'onglet : liste et compteurs relus.
         open_folder('jaune')
         before = page.locator('[data-folder-panel="jaune"] .dj-row').count()
@@ -272,7 +299,7 @@ def run(base, pw, out, restart):
         page.fill('#dj-optional-title', 'Échange atelier'); page.click('#dj-optional-form button[value="later"]')
         empty = page.locator('.dj-optional-case', has_text='Échange atelier')
         expect(empty).to_contain_text('Aucun document pour l’instant')
-        page.screenshot(path=str(out / '05-documents-complementaires.png'), full_page=True)
+        page.screenshot(path=str(out / '05-documents-complementaires.png'), full_page=True, animations='disabled')
         page.click('#dj-folders-back')
         assert page.locator('.dj-tally-item.is-missing strong').inner_text() == missing_before
         open_folder('rose')
@@ -310,7 +337,7 @@ def run(base, pw, out, restart):
         results = page.locator('#ts-launches-results')
         expect(results).to_contain_text(f'FIA-{tag}'); expect(results).not_to_contain_text(f'VES-{tag}')
         expect(results.locator('.acc-folder-chip')).to_have_count(2)            # jaune et bleu uniquement
-        page.screenshot(path=str(out / '03-recherche-technicien.png'))
+        page.screenshot(path=str(out / '03-recherche-technicien.png'), animations='disabled')
         page.fill('#ts-launches-q', f'confidentiel {tag}'); page.click('#ts-launches [type=submit]')
         expect(results).to_contain_text('Aucune commande ni aucun document autorisé')
         page.fill('#ts-launches-q', f'SEC-{tag}'); page.click('#ts-launches [type=submit]')
@@ -341,7 +368,7 @@ def run(base, pw, out, restart):
         page.locator('#ts-folders-results [data-ts-open]').first.click()
         expect(page.locator('#ops-launch-summary')).to_be_visible()
         assert page.locator('h1').inner_text() in ('Sous-dossier jaune', 'Sous-dossier bleu')
-        page.screenshot(path=str(out / '04-mes-sous-dossiers.png'))
+        page.screenshot(path=str(out / '04-mes-sous-dossiers.png'), animations='disabled')
         checks.append('Mes sous-dossiers : recherche par couleur, ouverture d’un sous-dossier réellement accessible')
         assert page.context.request.get(f"/api/launches/{secret['id']}").status in (403, 404)
         checks.append('Commande non attribuée : refusée par l’API (aucun contournement par l’URL)')
