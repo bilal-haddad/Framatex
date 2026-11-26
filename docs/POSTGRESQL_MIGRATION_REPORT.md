@@ -514,4 +514,6 @@ tout est conforme. La base SQLite reste le moteur par défaut.
 
 ## 13. Version
 
-SHA_FINAL
+Code et recettes validés au commit `e5e84773f92038f446da44e117fdb20a51bb5baa` (branche `feat/postgresql-migration`).
+Le commit suivant n'ajoute que cette section. Le SHA de tête poussé figure dans le message de fin de
+mission ; il se vérifie avec `git ls-remote origin feat/postgresql-migration`.
