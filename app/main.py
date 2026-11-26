@@ -484,6 +484,7 @@ async def upload_document(launch_id: str, folder: str = Form(...), title: str = 
         raise HTTPException(422, "Métadonnées invalides")
     from .optional_documents import OPTIONAL_TYPE, attach
     case = attach(db, user, launch_id, folder, optional_case_id)
+    db.commit()                         # aucune connexion retenue pendant le transfert du fichier
     stored = await store_upload(file)
     result = await save_direct_upload(db, user, stored, entity, title, OPTIONAL_TYPE if case else doc_type, comment)
     if case:
@@ -514,6 +515,7 @@ async def save_direct_upload(db, user, stored, entity, title, doc_type, comment,
     try:
         previous = current_version(document) if document else None
         strict = bool(previous and db.get(DocumentIdentification, previous.id))
+        db.commit()                     # connexion rendue au pool pendant l'analyse (aucune écriture en cours)
         identification = await run_in_threadpool(assess_direct, STORAGE / stored[1], stored[0], entity.slug, doc_type, strict)
         result = (persist_version(db, user, stored, document, comment, identification) if document else
                   persist_document(db, user, stored, entity, title, doc_type, comment, identification))
@@ -530,6 +532,7 @@ async def save_direct_upload(db, user, stored, entity, title, doc_type, comment,
 async def new_version(doc_id: str, file: UploadFile = File(...), comment: str = Form("", max_length=2000), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     d = get_doc(db, doc_id)
     must(user, "document.version", d.folder.slug)
+    db.commit()                         # aucune connexion retenue pendant le transfert du fichier
     stored = await store_upload(file)
     return await save_direct_upload(db, user, stored, d.folder, d.title, d.doc_type, comment, d)
 

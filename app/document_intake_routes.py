@@ -76,6 +76,9 @@ async def stage_document(launch_id: str, folder: str = Form(...), file: UploadFi
                          user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     destination(db, user, launch_id, folder)
     clean_expired(db)
+    # Connexion rendue au pool pendant le transfert et l'analyse (plusieurs secondes avec l'OCR) :
+    # sinon une vingtaine de dépôts simultanés épuisent le pool et bloquent toutes les requêtes.
+    db.commit()
     original, disk_name, size, sha, mime = await store_upload(file)
     try:
         analysis = await run_in_threadpool(read_safely, STORAGE / disk_name, original)

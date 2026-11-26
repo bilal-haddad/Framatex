@@ -18,7 +18,11 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.getenv("FRAMATEX_DATA_DIR", str(ROOT / "data"))).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'framat.db'}")
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False, "timeout": 15} if DATABASE_URL.startswith("sqlite") else {}, pool_pre_ping=True)
+# Pool dimensionné sur le pool de threads de l'application (40 par défaut) : chaque requête synchrone
+# occupe au plus une connexion ; configurable pour un déploiement à plusieurs processus.
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False, "timeout": 15} if DATABASE_URL.startswith("sqlite") else {},
+                       pool_pre_ping=True, pool_size=int(os.getenv("FRAMATEX_DB_POOL_SIZE", "20")),
+                       max_overflow=int(os.getenv("FRAMATEX_DB_MAX_OVERFLOW", "20")), pool_timeout=int(os.getenv("FRAMATEX_DB_POOL_TIMEOUT", "30")))
 if DATABASE_URL.startswith("sqlite") and ":memory:" not in DATABASE_URL:
     from sqlalchemy import event
 

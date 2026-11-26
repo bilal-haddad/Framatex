@@ -8,7 +8,9 @@ from threading import BoundedSemaphore
 
 from .intake import LIMITS, MAX_ANALYSIS_BYTES, normalized, preview
 
-ANALYZERS = BoundedSemaphore(2)
+import os
+# Analyses (OCR compris) menées en parallèle : bornées pour préserver les autres utilisateurs.
+ANALYZERS = BoundedSemaphore(max(1, int(os.getenv('FRAMATEX_ANALYSIS_CONCURRENCY', '2'))))
 ALIASES = {'dossier technique': 'Dossier technique client', 'declaration douaniere': 'Pièce douanière'}
 
 

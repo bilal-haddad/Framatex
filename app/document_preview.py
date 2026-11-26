@@ -44,6 +44,7 @@ def _version(db: Session, user: User, version_id: str):
         raise HTTPException(503, "Fichier indisponible dans le stockage")
     if path.stat().st_size > MAX_BYTES:
         raise HTTPException(413, "Fichier trop volumineux pour un aperçu : téléchargez-le si vous y êtes autorisé")
+    db.commit()                         # droits vérifiés : connexion rendue au pool pendant le rendu
     return version, document, path
 
 
