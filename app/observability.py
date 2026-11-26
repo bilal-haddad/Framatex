@@ -82,8 +82,15 @@ def ready():
     checks, ok = {}, True
     try:
         with SessionLocal() as db:
-            applied = {row[0] for row in db.execute(text("SELECT version FROM schema_migrations"))}
-            checks["database"] = "ok" if set(REVISIONS) <= applied else "migrations en attente"
+            if db.get_bind().dialect.name == "postgresql":
+                from .migrate import postgresql_heads
+                current, head = postgresql_heads()
+                checks["database"] = "ok" if current == head else "migrations en attente"
+                checks["engine"] = "postgresql"
+            else:
+                applied = {row[0] for row in db.execute(text("SELECT version FROM schema_migrations"))}
+                checks["database"] = "ok" if set(REVISIONS) <= applied else "migrations en attente"
+                checks["engine"] = "sqlite"
             pending = db.execute(text("SELECT COUNT(*) FROM storage_purge_queue WHERE done_at IS NULL")).scalar()
             checks["purge_queue_pending"] = pending
     except Exception as exc:                                    # base indisponible ou verrouillée

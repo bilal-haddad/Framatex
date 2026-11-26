@@ -19,7 +19,8 @@ PASSWORD = 'WorkspacePassword-2026!'
 
 @pytest.fixture
 def workspace():
-    Base.metadata.drop_all(engine)
+    from tests.conftest import reset_database
+    reset_database()
     with TestClient(app) as client:
         with SessionLocal() as db:
             role = Role(name='Administrateur')

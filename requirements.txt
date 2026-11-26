@@ -15,3 +15,6 @@ qrcode>=7.4,<9
 psutil>=6,<8; sys_platform == 'win32'
 # Base des fuseaux horaires : absente de Windows (ZoneInfo « Africa/Casablanca »).
 tzdata>=2024.1
+# PostgreSQL (DATABASE_URL=postgresql+psycopg://…) : pilote psycopg 3 et migrations Alembic.
+psycopg[binary]>=3.2,<4
+alembic>=1.13,<2

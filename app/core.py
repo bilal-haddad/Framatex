@@ -17,12 +17,40 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.getenv("FRAMATEX_DATA_DIR", str(ROOT / "data"))).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+# Moteur choisi par DATABASE_URL (SQLite par défaut, solution de secours) :
+#   sqlite:///…/framat.db
+#   postgresql+psycopg://utilisateur@hôte:5432/framatex  (mot de passe via PGPASSWORD ou .pgpass,
+#   jamais dans le code ; « postgresql:// » est accepté et converti vers le pilote psycopg 3).
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'framat.db'}")
-# Pool dimensionné sur le pool de threads de l'application (40 par défaut) : chaque requête synchrone
-# occupe au plus une connexion ; configurable pour un déploiement à plusieurs processus.
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False, "timeout": 15} if DATABASE_URL.startswith("sqlite") else {},
-                       pool_pre_ping=True, pool_size=int(os.getenv("FRAMATEX_DB_POOL_SIZE", "20")),
-                       max_overflow=int(os.getenv("FRAMATEX_DB_MAX_OVERFLOW", "20")), pool_timeout=int(os.getenv("FRAMATEX_DB_POOL_TIMEOUT", "30")))
+if DATABASE_URL.startswith(("postgresql://", "postgres://")):
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL.split("://", 1)[1]
+IS_SQLITE = DATABASE_URL.startswith("sqlite")
+IS_POSTGRES = DATABASE_URL.startswith("postgresql")
+
+
+def _engine_options() -> dict:
+    timeout = int(os.getenv("FRAMATEX_DB_POOL_TIMEOUT", "30"))
+    if IS_SQLITE:
+        # Pool dimensionné sur le pool de threads de l'application (40 par défaut) : chaque requête
+        # synchrone occupe au plus une connexion.
+        return {"connect_args": {"check_same_thread": False, "timeout": 15}, "pool_pre_ping": True,
+                "pool_size": int(os.getenv("FRAMATEX_DB_POOL_SIZE", "20")),
+                "max_overflow": int(os.getenv("FRAMATEX_DB_MAX_OVERFLOW", "20")), "pool_timeout": timeout}
+    if IS_POSTGRES:
+        # PostgreSQL : connexions coûteuses côté serveur (≈ 10 Mo chacune) ; pool modéré par processus
+        # (processus × (taille + débordement) doit rester sous max_connections). Fuseau UTC, délais
+        # bornés : une requête ou une attente de verrou anormale échoue au lieu de bloquer le pool.
+        options = (f"-c timezone=UTC -c statement_timeout={int(os.getenv('FRAMATEX_PG_STATEMENT_TIMEOUT_MS', '30000'))}"
+                   f" -c lock_timeout={int(os.getenv('FRAMATEX_PG_LOCK_TIMEOUT_MS', '10000'))}"
+                   f" -c idle_in_transaction_session_timeout={int(os.getenv('FRAMATEX_PG_IDLE_TX_TIMEOUT_MS', '60000'))}")
+        return {"connect_args": {"options": options, "application_name": "framatex"}, "pool_pre_ping": True,
+                "pool_size": int(os.getenv("FRAMATEX_DB_POOL_SIZE", "10")),
+                "max_overflow": int(os.getenv("FRAMATEX_DB_MAX_OVERFLOW", "10")), "pool_timeout": timeout,
+                "pool_recycle": 1800}
+    return {"pool_pre_ping": True}
+
+
+engine = create_engine(DATABASE_URL, **_engine_options())
 if DATABASE_URL.startswith("sqlite") and ":memory:" not in DATABASE_URL:
     from sqlalchemy import event
 

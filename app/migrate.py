@@ -44,10 +44,51 @@ def _versions(conn):
 
 
 def migrate():
-    """Applique les révisions manquantes. Plusieurs processus serveur peuvent démarrer ensemble :
-    un verrou de fichier garantit qu'un seul migre, les autres attendent puis constatent la base à jour."""
+    """Applique les révisions manquantes.
+
+    SQLite : migrateur historique (0001→0019) sous verrou de fichier.
+    PostgreSQL : révisions Alembic (migrations/versions) sous verrou consultatif PostgreSQL : un seul
+    processus migre ; les autres attendent puis constatent la base à jour."""
+    if engine.dialect.name == 'postgresql':
+        return migrate_postgresql()
     with _migration_lock():
         return _migrate()
+
+
+PG_MIGRATION_LOCK = 727370019            # identifiant du verrou consultatif des migrations FRAMATEX
+
+
+def _alembic_config():
+    from alembic.config import Config
+    root = Path(__file__).resolve().parents[1]
+    config = Config(str(root / 'alembic.ini'))
+    config.set_main_option('script_location', str(root / 'migrations'))
+    return config
+
+
+def postgresql_heads() -> tuple[str | None, str]:
+    """(révision appliquée, révision attendue) de la base PostgreSQL."""
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+    head = ScriptDirectory.from_config(_alembic_config()).get_current_head()
+    with engine.connect() as conn:
+        return MigrationContext.configure(conn).get_current_revision(), head
+
+
+def migrate_postgresql():
+    from alembic import command
+    config = _alembic_config()
+    with engine.connect() as lock:
+        lock.execute(text('SELECT pg_advisory_lock(:k)'), {'k': PG_MIGRATION_LOCK})
+        try:
+            with engine.begin() as conn:
+                config.attributes['connection'] = conn
+                command.upgrade(config, 'head')
+        finally:
+            lock.execute(text('SELECT pg_advisory_unlock(:k)'), {'k': PG_MIGRATION_LOCK})
+            lock.commit()
+    current, head = postgresql_heads()
+    return [current or 'aucune']
 
 
 class _migration_lock:

@@ -58,7 +58,17 @@ MIMES = {".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-off
 async def lifespan(app: FastAPI):
     from .migrate import migrate
     limits_mib()
-    migrate()
+    from .core import IS_POSTGRES
+    if IS_POSTGRES and os.getenv("FRAMATEX_AUTO_MIGRATE", "0") != "1":
+        # PostgreSQL : migrations exécutées de façon contrôlée (python -m app.db upgrade), jamais par
+        # chaque processus serveur ; démarrage refusé si le schéma n'est pas à jour.
+        from .migrate import postgresql_heads
+        current, head = postgresql_heads()
+        if current != head:
+            raise RuntimeError(f"Schéma PostgreSQL à la révision {current or 'aucune'} au lieu de {head} : "
+                               "exécutez « python -m app.db upgrade » avant de démarrer le serveur.")
+    else:
+        migrate()
     from .core import SessionLocal
     from .document_intake_routes import clean_expired
     with SessionLocal() as db:

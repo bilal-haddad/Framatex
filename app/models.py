@@ -1,7 +1,7 @@
 from __future__ import annotations
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, Boolean, ForeignKey, DateTime, Integer, UniqueConstraint
+from sqlalchemy import String, Text, Boolean, ForeignKey, DateTime, Integer, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .core import Base, utcnow
 
@@ -174,3 +174,15 @@ class IdempotencyKey(Base):
     key: Mapped[str] = mapped_column(String(80))
     response: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+# Index créés jusqu'ici par le seul migrateur SQLite (0015, 0016, 0017, 0018) : déclarés ici pour que les
+# métadonnées décrivent tout le schéma (création PostgreSQL par Alembic, base neuve SQLite).
+Index("ix_audit_events_occurred_at", AuditEvent.occurred_at)
+Index("ix_audit_events_target_id", AuditEvent.target_id)
+Index("ix_document_versions_deleted_at", DocumentVersion.deleted_at)
+Index("ix_document_versions_sha256", DocumentVersion.sha256)
+Index("ix_documents_deleted_at", Document.deleted_at)
+Index("ix_launches_client_name", Launch.client_name)
+Index("ix_launches_order_ref", Launch.order_ref)
+Index("ix_optional_document_cases_launch_folder", OptionalDocumentCase.launch_id, OptionalDocumentCase.folder_slug)

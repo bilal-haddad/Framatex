@@ -48,7 +48,7 @@ class ClientSharedDocument(Base):
     __table_args__ = (
         CheckConstraint("status IN ('published','revoked')", name="ck_client_shared_document_status"),
         Index("uq_client_shared_active_version", "client_id", "document_version_id", unique=True,
-              sqlite_where=text("status = 'published'")),
+              sqlite_where=text("status = 'published'"), postgresql_where=text("status = 'published'")),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     client_id: Mapped[str] = mapped_column(ForeignKey("client_accounts.id"), index=True)

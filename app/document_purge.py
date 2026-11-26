@@ -114,7 +114,8 @@ def _target(db, kind, item_id):
 
 
 def _existing_tables(db) -> set[str]:
-    return {row[0] for row in db.execute(text("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"))}
+    from sqlalchemy import inspect
+    return set(inspect(db.connection()).get_table_names())        # SQLite et PostgreSQL
 
 
 def blockers(db, versions) -> list[str]:
@@ -220,9 +221,10 @@ def purge(kind: str, item_id: str, payload: PurgePayload, user: User = Depends(g
         if table in tables:
             for vid in ids:
                 db.execute(text(f"DELETE FROM {table} WHERE {column} = :v"), {"v": vid})
-    if "document_content_fts" in tables:
+    if tables & {"document_content_fts", "document_search_index"}:
+        from .document_search import remove_version
         for vid in ids:
-            db.execute(text("DELETE FROM document_content_fts WHERE version_id = :v"), {"v": vid})
+            remove_version(db, vid)
     db.execute(delete(DocumentVersion).where(DocumentVersion.id.in_(ids)))
     if kind == "documents":
         db.execute(delete(Document).where(Document.id == document.id))
