@@ -37,7 +37,7 @@ Objectif : configuration B (20–60 collaborateurs), plusieurs processus, traite
 
 | # | Travail | Priorité | Dépendances | Effort |
 |---|---|---|---|---|
-| 2.1 | Migration PostgreSQL (Alembic depuis 0019, FTS → tsvector, script de copie vérifié, double recette) | P1 | 1.4 | 3–4 sem |
+| 2.1 | ~~Migration PostgreSQL~~ **fait** (branche `feat/postgresql-migration`, voir POSTGRESQL_MIGRATION_REPORT.md) ; reste : serveur PostgreSQL dédié, optimisation liste/tableau de bord | P1 | 1.4 | — |
 | 2.2 | Workers documentaires (Redis + RQ/Celery), états de tâche visibles, reprise automatique | P1 | — (compatible SQLite) | 2–3 sem |
 | 2.3 | Docker Compose (Nginx, API ×N, worker, PostgreSQL, Redis), secrets, volumes, migrations dédiées | P1 | 2.1, 2.2 | 1–2 sem |
 | 2.4 | Synthèse par commande précalculée (tableau de bord en O(1) par commande) | P1 | — | 1–2 sem |

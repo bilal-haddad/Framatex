@@ -98,17 +98,12 @@ conservation).
 constatées : un seul écrivain, pas de réplication, migrateur limité à SQLite, clés étrangères non
 appliquées, FTS5 propre à SQLite.
 
-**PostgreSQL** est recommandé pour la production multi-processus. Stratégie sans perte (proposition,
-non implémentée) :
-
-1. Activer d'abord `PRAGMA foreign_keys=ON` sous SQLite en préproduction et corriger les violations
-   (données orphelines) — prérequis pour des contraintes PostgreSQL strictes.
-2. Adopter Alembic à partir de la révision 0019 (schéma figé comme base), sans réécrire l'historique.
-3. Remplacer les éléments propres à SQLite : FTS5 → `tsvector` + index GIN (configuration `french`
-   et `unaccent`), requêtes `sqlite_master` → `information_schema`, `PRAGMA` → paramètres de pool.
-4. Copie des données par script (ordre des tables selon les dépendances), contrôle des volumes et des
-   empreintes de chaque version, double exécution des recettes sur la copie.
-5. Bascule pendant une fenêtre de maintenance, SQLite conservé en lecture seule comme repli.
+**PostgreSQL** est recommandé pour la production multi-processus. **Implémenté** sur la branche
+`feat/postgresql-migration` : Alembic depuis 0019, recherche `tsvector` + GIN (`simple` + `unaccent`),
+transfert SQLite → PostgreSQL contrôlé (anomalies bloquantes, jamais corrigées en silence), vérification
+ligne à ligne et SHA-256 des fichiers, sauvegarde `pg_dump`, scripts Windows. Mesures, procédures et
+limites : [POSTGRESQL_MIGRATION_REPORT.md](POSTGRESQL_MIGRATION_REPORT.md). SQLite reste le moteur
+par défaut et le repli.
 
 ## 6. Stockage documentaire
 

@@ -206,6 +206,8 @@ def main():
 
 
 def run_migration_copy(qa, tmp, env):
+    if env.get('DATABASE_URL', '').startswith(('postgresql', 'postgres')):
+        return run_migration_postgresql(qa, env)
     src = Path(tmp) / 'framatex.db'
     if not src.exists():
         candidates = list(Path(tmp).glob('*.db')) + list(Path(tmp).glob('*.sqlite*'))
@@ -228,6 +230,28 @@ def run_migration_copy(qa, tmp, env):
         qa.check('Base', 'Copie de base existante : migration rejouable sans erreur', upgrade.returncode == 0 and again.returncode == 0,
                  (upgrade.stderr or again.stderr)[-300:])
         qa.check('Base', 'Copie de base existante : aucune perte de données', before == after, {'avant': before, 'après': after})
+
+
+def run_migration_postgresql(qa, env):
+    """PostgreSQL : la base de recette remplie est remise à niveau deux fois par Alembic (outil
+    d'exploitation `python -m app.db upgrade`) ; aucune ligne ne doit bouger."""
+    from sqlalchemy import create_engine, text
+    tables = ['users', 'launches', 'documents', 'document_versions', 'audit_events', 'client_accounts',
+              'client_order_requests', 'client_document_requests', 'client_shared_documents', 'document_search_index']
+    engine = create_engine(env['DATABASE_URL'].replace('postgresql://', 'postgresql+psycopg://', 1))
+    def counts():
+        with engine.connect() as conn:
+            return {t: conn.execute(text(f'SELECT count(*) FROM {t}')).scalar_one() for t in tables}
+    try:
+        before = counts()
+        upgrade = subprocess.run([sys.executable, '-m', 'app.db', 'upgrade'], cwd=ROOT, env=env, capture_output=True, text=True)
+        again = subprocess.run([sys.executable, '-m', 'app.db', 'upgrade'], cwd=ROOT, env=env, capture_output=True, text=True)
+        after = counts()
+    finally:
+        engine.dispose()
+    qa.check('Base', 'PostgreSQL rempli : migration Alembic rejouable sans erreur', upgrade.returncode == 0 and again.returncode == 0,
+             (upgrade.stderr or again.stderr)[-300:])
+    qa.check('Base', 'PostgreSQL rempli : aucune perte de données', before == after, {'avant': before, 'après': after})
 
 
 def check_runtime_liveness(qa, ctx):
