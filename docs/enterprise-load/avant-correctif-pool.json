@@ -1,0 +1,199 @@
+{
+ "config": {
+  "levels": [
+   20,
+   30,
+   50,
+   75,
+   100
+  ],
+  "sustain": [
+   50,
+   120
+  ],
+  "open_requests": 6,
+  "workers": 1,
+  "cpus": 4,
+  "memory_mb": 16087
+ },
+ "phases": [
+  {
+   "phase": "palier",
+   "users": 20,
+   "requests": 345,
+   "wall_s": 77.0,
+   "rps": 4.5,
+   "mean_ms": 4371,
+   "median_ms": 428,
+   "p95_ms": 60342,
+   "p99_ms": 61173,
+   "max_ms": 61441,
+   "errors": 6,
+   "error_rate": 1.74,
+   "sqlite_locked": 0,
+   "timeouts": 0,
+   "error_samples": [
+    [
+     "dépôt Excel",
+     0,
+     "RemoteProtocolError: Server disconnected without sending a response."
+    ],
+    [
+     "dépôt Excel",
+     500,
+     "Internal Server Error"
+    ],
+    [
+     "dépôt PDF (analyse/OCR)",
+     500,
+     "Internal Server Error"
+    ],
+    [
+     "dépôt Word",
+     0,
+     "RemoteProtocolError: Server disconnected without sending a response."
+    ]
+   ],
+   "operations": {
+    "connexion": {
+     "n": 20,
+     "median_ms": 310,
+     "p95_ms": 781,
+     "p99_ms": 781,
+     "errors": 0
+    },
+    "liste commandes": {
+     "n": 20,
+     "median_ms": 224,
+     "p95_ms": 711,
+     "p99_ms": 711,
+     "errors": 0
+    },
+    "création commande": {
+     "n": 20,
+     "median_ms": 227,
+     "p95_ms": 712,
+     "p99_ms": 712,
+     "errors": 0
+    },
+    "ouverture commande (6 req.)": {
+     "n": 20,
+     "median_ms": 1207,
+     "p95_ms": 1382,
+     "p99_ms": 1382,
+     "errors": 0
+    },
+    "modification fiche": {
+     "n": 20,
+     "median_ms": 220,
+     "p95_ms": 392,
+     "p99_ms": 392,
+     "errors": 0
+    },
+    "dépôt PDF (analyse/OCR)": {
+     "n": 20,
+     "median_ms": 755,
+     "p95_ms": 61360,
+     "p99_ms": 61360,
+     "errors": 2
+    },
+    "publication PDF": {
+     "n": 18,
+     "median_ms": 40,
+     "p95_ms": 384,
+     "p99_ms": 384,
+     "errors": 0
+    },
+    "dépôt Excel": {
+     "n": 20,
+     "median_ms": 60727,
+     "p95_ms": 61268,
+     "p99_ms": 61268,
+     "errors": 3
+    },
+    "dépôt Word": {
+     "n": 20,
+     "median_ms": 390,
+     "p95_ms": 561,
+     "p99_ms": 561,
+     "errors": 1
+    },
+    "aperçu PDF": {
+     "n": 18,
+     "median_ms": 445,
+     "p95_ms": 550,
+     "p99_ms": 550,
+     "errors": 0
+    },
+    "validation (décision)": {
+     "n": 18,
+     "median_ms": 465,
+     "p95_ms": 639,
+     "p99_ms": 639,
+     "errors": 0
+    },
+    "recherche": {
+     "n": 20,
+     "median_ms": 816,
+     "p95_ms": 1194,
+     "p99_ms": 1194,
+     "errors": 0
+    },
+    "aperçu Excel": {
+     "n": 17,
+     "median_ms": 534,
+     "p95_ms": 639,
+     "p99_ms": 639,
+     "errors": 0
+    },
+    "historique commande": {
+     "n": 20,
+     "median_ms": 367,
+     "p95_ms": 580,
+     "p99_ms": 580,
+     "errors": 0
+    },
+    "habilitations": {
+     "n": 20,
+     "median_ms": 460,
+     "p95_ms": 919,
+     "p99_ms": 919,
+     "errors": 0
+    },
+    "suppression": {
+     "n": 17,
+     "median_ms": 540,
+     "p95_ms": 2042,
+     "p99_ms": 2042,
+     "errors": 0
+    },
+    "restauration": {
+     "n": 17,
+     "median_ms": 350,
+     "p95_ms": 2363,
+     "p99_ms": 2363,
+     "errors": 0
+    },
+    "tableau de bord": {
+     "n": 20,
+     "median_ms": 7075,
+     "p95_ms": 7714,
+     "p99_ms": 7714,
+     "errors": 0
+    }
+   },
+   "cpu_percent_mean": 26.0,
+   "cpu_percent_max": 190.0,
+   "rss_mb_max": 252,
+   "available_mb_min": 14916
+  }
+ ],
+ "stopped_at": 20,
+ "integrity": {
+  "launches_in_db": 20,
+  "creations_acknowledged": 20,
+  "audit_launch_create": 20,
+  "duplicate_names": 0,
+  "documents": 54
+ }
+}

@@ -33,6 +33,12 @@ if DATABASE_URL.startswith("sqlite") and ":memory:" not in DATABASE_URL:
         # brute de framat.db (sauvegarde manuelle, Windows) pourrait omettre les écritures récentes.
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA busy_timeout=15000")
+        # Plusieurs processus serveur : le journal WAL laisse lire pendant une écriture. Option de
+        # production (FRAMATEX_SQLITE_WAL=1) : les sauvegardes doivent alors passer par
+        # scripts/backup_framatex.py (API de sauvegarde SQLite), jamais par une copie brute du fichier.
+        if os.getenv("FRAMATEX_SQLITE_WAL") == "1":
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.close()
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 

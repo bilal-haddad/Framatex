@@ -1,0 +1,320 @@
+{
+ "config": {
+  "levels": [
+   50,
+   100
+  ],
+  "sustain": null,
+  "open_requests": 6,
+  "workers": 4,
+  "cpus": 4,
+  "memory_mb": 16087
+ },
+ "phases": [
+  {
+   "phase": "palier",
+   "users": 50,
+   "requests": 900,
+   "wall_s": 29.9,
+   "rps": 30.1,
+   "mean_ms": 925,
+   "median_ms": 284,
+   "p95_ms": 4420,
+   "p99_ms": 13478,
+   "max_ms": 14366,
+   "errors": 0,
+   "error_rate": 0.0,
+   "sqlite_locked": 0,
+   "timeouts": 0,
+   "error_samples": [],
+   "operations": {
+    "connexion": {
+     "n": 50,
+     "median_ms": 593,
+     "p95_ms": 911,
+     "p99_ms": 1568,
+     "errors": 0
+    },
+    "liste commandes": {
+     "n": 50,
+     "median_ms": 383,
+     "p95_ms": 1191,
+     "p99_ms": 1390,
+     "errors": 0
+    },
+    "création commande": {
+     "n": 50,
+     "median_ms": 311,
+     "p95_ms": 1006,
+     "p99_ms": 1150,
+     "errors": 0
+    },
+    "ouverture commande (6 req.)": {
+     "n": 50,
+     "median_ms": 985,
+     "p95_ms": 1925,
+     "p99_ms": 1980,
+     "errors": 0
+    },
+    "modification fiche": {
+     "n": 50,
+     "median_ms": 176,
+     "p95_ms": 620,
+     "p99_ms": 747,
+     "errors": 0
+    },
+    "dépôt PDF (analyse/OCR)": {
+     "n": 50,
+     "median_ms": 1664,
+     "p95_ms": 4579,
+     "p99_ms": 5247,
+     "errors": 0
+    },
+    "publication PDF": {
+     "n": 50,
+     "median_ms": 148,
+     "p95_ms": 351,
+     "p99_ms": 548,
+     "errors": 0
+    },
+    "dépôt Excel": {
+     "n": 50,
+     "median_ms": 3610,
+     "p95_ms": 5564,
+     "p99_ms": 5700,
+     "errors": 0
+    },
+    "dépôt Word": {
+     "n": 50,
+     "median_ms": 227,
+     "p95_ms": 512,
+     "p99_ms": 763,
+     "errors": 0
+    },
+    "aperçu PDF": {
+     "n": 50,
+     "median_ms": 191,
+     "p95_ms": 586,
+     "p99_ms": 772,
+     "errors": 0
+    },
+    "validation (décision)": {
+     "n": 50,
+     "median_ms": 228,
+     "p95_ms": 500,
+     "p99_ms": 600,
+     "errors": 0
+    },
+    "aperçu Excel": {
+     "n": 50,
+     "median_ms": 251,
+     "p95_ms": 468,
+     "p99_ms": 626,
+     "errors": 0
+    },
+    "recherche": {
+     "n": 50,
+     "median_ms": 228,
+     "p95_ms": 744,
+     "p99_ms": 1132,
+     "errors": 0
+    },
+    "historique commande": {
+     "n": 50,
+     "median_ms": 168,
+     "p95_ms": 412,
+     "p99_ms": 664,
+     "errors": 0
+    },
+    "suppression": {
+     "n": 50,
+     "median_ms": 146,
+     "p95_ms": 289,
+     "p99_ms": 468,
+     "errors": 0
+    },
+    "restauration": {
+     "n": 50,
+     "median_ms": 145,
+     "p95_ms": 379,
+     "p99_ms": 525,
+     "errors": 0
+    },
+    "habilitations": {
+     "n": 50,
+     "median_ms": 196,
+     "p95_ms": 432,
+     "p99_ms": 545,
+     "errors": 0
+    },
+    "tableau de bord": {
+     "n": 50,
+     "median_ms": 2296,
+     "p95_ms": 13860,
+     "p99_ms": 14273,
+     "errors": 0
+    }
+   },
+   "cpu_percent_mean": 171.0,
+   "cpu_percent_max": 327.0,
+   "rss_mb_max": 1026,
+   "available_mb_min": 14492
+  },
+  {
+   "phase": "palier",
+   "users": 100,
+   "requests": 1800,
+   "wall_s": 126.9,
+   "rps": 14.2,
+   "mean_ms": 3715,
+   "median_ms": 883,
+   "p95_ms": 8796,
+   "p99_ms": 83841,
+   "max_ms": 86995,
+   "errors": 0,
+   "error_rate": 0.0,
+   "sqlite_locked": 0,
+   "timeouts": 0,
+   "error_samples": [],
+   "operations": {
+    "connexion": {
+     "n": 100,
+     "median_ms": 1544,
+     "p95_ms": 4232,
+     "p99_ms": 4649,
+     "errors": 0
+    },
+    "liste commandes": {
+     "n": 100,
+     "median_ms": 4205,
+     "p95_ms": 7762,
+     "p99_ms": 8103,
+     "errors": 0
+    },
+    "création commande": {
+     "n": 100,
+     "median_ms": 349,
+     "p95_ms": 1440,
+     "p99_ms": 1807,
+     "errors": 0
+    },
+    "ouverture commande (6 req.)": {
+     "n": 100,
+     "median_ms": 1888,
+     "p95_ms": 4710,
+     "p99_ms": 5614,
+     "errors": 0
+    },
+    "modification fiche": {
+     "n": 100,
+     "median_ms": 380,
+     "p95_ms": 1937,
+     "p99_ms": 2257,
+     "errors": 0
+    },
+    "dépôt PDF (analyse/OCR)": {
+     "n": 100,
+     "median_ms": 3021,
+     "p95_ms": 5838,
+     "p99_ms": 5953,
+     "errors": 0
+    },
+    "publication PDF": {
+     "n": 100,
+     "median_ms": 386,
+     "p95_ms": 4523,
+     "p99_ms": 4825,
+     "errors": 0
+    },
+    "dépôt Excel": {
+     "n": 100,
+     "median_ms": 5703,
+     "p95_ms": 7512,
+     "p99_ms": 8063,
+     "errors": 0
+    },
+    "dépôt Word": {
+     "n": 100,
+     "median_ms": 1556,
+     "p95_ms": 4060,
+     "p99_ms": 4860,
+     "errors": 0
+    },
+    "aperçu PDF": {
+     "n": 100,
+     "median_ms": 532,
+     "p95_ms": 2086,
+     "p99_ms": 2141,
+     "errors": 0
+    },
+    "validation (décision)": {
+     "n": 100,
+     "median_ms": 624,
+     "p95_ms": 2528,
+     "p99_ms": 4587,
+     "errors": 0
+    },
+    "aperçu Excel": {
+     "n": 100,
+     "median_ms": 508,
+     "p95_ms": 4505,
+     "p99_ms": 4639,
+     "errors": 0
+    },
+    "recherche": {
+     "n": 100,
+     "median_ms": 502,
+     "p95_ms": 2836,
+     "p99_ms": 4432,
+     "errors": 0
+    },
+    "historique commande": {
+     "n": 100,
+     "median_ms": 322,
+     "p95_ms": 1376,
+     "p99_ms": 1456,
+     "errors": 0
+    },
+    "suppression": {
+     "n": 100,
+     "median_ms": 575,
+     "p95_ms": 2273,
+     "p99_ms": 3455,
+     "errors": 0
+    },
+    "restauration": {
+     "n": 100,
+     "median_ms": 420,
+     "p95_ms": 1915,
+     "p99_ms": 2102,
+     "errors": 0
+    },
+    "habilitations": {
+     "n": 100,
+     "median_ms": 598,
+     "p95_ms": 2076,
+     "p99_ms": 2602,
+     "errors": 0
+    },
+    "tableau de bord": {
+     "n": 100,
+     "median_ms": 26318,
+     "p95_ms": 86499,
+     "p99_ms": 86896,
+     "errors": 0
+    }
+   },
+   "cpu_percent_mean": 243.0,
+   "cpu_percent_max": 3590.0,
+   "rss_mb_max": 1332,
+   "available_mb_min": 14112
+  }
+ ],
+ "integrity": {
+  "launches_in_db": 150,
+  "creations_acknowledged": 150,
+  "audit_launch_create": 150,
+  "duplicate_names": 0,
+  "documents": 450
+ }
+}

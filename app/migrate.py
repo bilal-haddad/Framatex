@@ -44,6 +44,45 @@ def _versions(conn):
 
 
 def migrate():
+    """Applique les révisions manquantes. Plusieurs processus serveur peuvent démarrer ensemble :
+    un verrou de fichier garantit qu'un seul migre, les autres attendent puis constatent la base à jour."""
+    with _migration_lock():
+        return _migrate()
+
+
+class _migration_lock:
+    def __init__(self, timeout=120):
+        from .core import DATA_DIR
+        self.path, self.timeout, self.fd = Path(DATA_DIR) / '.migration.lock', timeout, None
+
+    def __enter__(self):
+        import os
+        import time
+        started = time.monotonic()
+        while True:
+            try:
+                self.fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(self.fd, str(os.getpid()).encode())
+                return self
+            except FileExistsError:
+                try:                                        # verrou orphelin (processus arrêté brutalement)
+                    if time.time() - self.path.stat().st_mtime > self.timeout:
+                        self.path.unlink(missing_ok=True)
+                        continue
+                except FileNotFoundError:
+                    continue
+                if time.monotonic() - started > self.timeout:
+                    raise RuntimeError('Migration déjà en cours dans un autre processus (verrou non libéré)')
+                time.sleep(.2)
+
+    def __exit__(self, *exc):
+        import os
+        if self.fd is not None:
+            os.close(self.fd)
+        self.path.unlink(missing_ok=True)
+
+
+def _migrate():
     if engine.dialect.name != 'sqlite':
         raise RuntimeError('Le migrateur MVP gère SQLite seulement. Ne pas démarrer sur une base PostgreSQL sans migrations spécifiques.')
     # Back up the real SQLite database before any legacy ALTER TABLE.

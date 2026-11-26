@@ -185,12 +185,16 @@ def main():
     def run_phase(label, users, duration=None):
         rec = Recorder(); usage = []; stop = threading.Event()
         def sample():
-            procs = [proc] + proc.children(recursive=True)
-            for p in procs:
-                p.cpu_percent(None)
+            known = {}                                         # objets Process conservés : mesure CPU cumulative correcte
+            def current():
+                for p in [proc] + proc.children(recursive=True):
+                    if p.pid not in known:
+                        known[p.pid] = p; p.cpu_percent(None)
+                return [p for p in known.values() if p.is_running()]
+            current()
             while not stop.wait(1):
                 try:
-                    procs = [proc] + proc.children(recursive=True)
+                    procs = current()
                     usage.append((sum(p.cpu_percent(None) for p in procs), sum(p.memory_info().rss for p in procs) / 2**20,
                                   psutil.virtual_memory().available / 2**20))
                 except psutil.Error:
