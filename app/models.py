@@ -137,3 +137,27 @@ class OptionalDocumentCase(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+class StoragePurge(Base):
+    """Fichier physique à effacer après une suppression définitive validée en base.
+
+    L'effacement n'a lieu qu'après la validation de la transaction ; une interruption entre les deux
+    laisse une ligne en attente, reprise au démarrage (aucun fichier encore référencé n'est effacé)."""
+    __tablename__ = "storage_purge_queue"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    disk_name: Mapped[str] = mapped_column(String(80), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class RetentionClearance(Base):
+    """Vérification administrative de conservation documentaire, préalable à une suppression définitive."""
+    __tablename__ = "retention_clearances"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    document_id: Mapped[str] = mapped_column(String(36), index=True)        # sans clé étrangère : survit à la purge
+    version_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    reason: Mapped[str] = mapped_column(Text)
+    cleared_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    cleared_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -111,13 +111,33 @@ def delete_document_version(version_id: str, payload: DeletionPayload | None = N
     db.commit()
 
 
-def _trash_row(version: DocumentVersion):
-    document = version.document
-    return {'kind': 'document' if document.deleted_at is not None else 'version',
-            'document_id': document.id, 'version_id': version.id, 'title': document.title,
-            'version': version.number, 'folder': document.folder.slug,
-            'deleted_at': (document.deleted_at if document.deleted_at is not None else version.deleted_at).isoformat(),
-            'reason': document.deletion_reason if document.deleted_at is not None else version.deletion_reason}
+def _trash_rows(db: Session, user):
+    """Corbeille : une ligne par document supprimé, une ligne par version supprimée d'un document actif."""
+    from .document_purge import check
+    from .models import Document as Doc, Folder, Launch
+    names = {}
+    def who(uid):
+        if uid and uid not in names:
+            person = db.get(User, uid); names[uid] = person.name if person else None
+        return names.get(uid)
+    rows = []
+    deleted_docs = db.scalars(select(Doc).where(Doc.deleted_at.is_not(None)).order_by(Doc.deleted_at.desc())).all()
+    loose = db.scalars(select(DocumentVersion).join(Doc).where(Doc.deleted_at.is_(None), DocumentVersion.deleted_at.is_not(None))
+                       .order_by(DocumentVersion.deleted_at.desc())).all()
+    for kind, document, versions in [('document', d, list(d.versions)) for d in deleted_docs] + [('version', v.document, [v]) for v in loose]:
+        latest = max(versions, key=lambda item: item.number) if versions else None
+        launch = document.folder.launch
+        marker = document if kind == 'document' else versions[0]
+        verdict = check(db, document, versions)
+        rows.append({'kind': kind, 'document_id': document.id, 'version_id': latest.id if latest else None,
+                     'title': document.title, 'original_name': latest.original_name if latest else None,
+                     'doc_type': document.doc_type, 'folder': document.folder.slug,
+                     'launch_id': launch.id, 'launch_name': launch.name, 'order_ref': launch.order_ref,
+                     'version': latest.number if latest else None, 'versions': sorted(v.number for v in versions),
+                     'size': sum(v.size for v in versions), 'deleted_at': marker.deleted_at.isoformat(),
+                     'deleted_by': who(marker.deleted_by), 'reason': marker.deletion_reason,
+                     'purge': verdict})
+    return sorted(rows, key=lambda row: row['deleted_at'], reverse=True)
 
 
 @router.get('/api/admin/document-trash')
@@ -125,10 +145,7 @@ def document_trash(user: User = Depends(get_current_user), db: Session = Depends
     audit, is_admin, _ = _deps()
     if not is_admin(user):
         raise HTTPException(403, "Fonction réservée à l'administration")
-    rows = db.scalars(select(DocumentVersion).join(Document).where(
-        (Document.deleted_at.is_not(None)) | (DocumentVersion.deleted_at.is_not(None))
-    ).order_by(DocumentVersion.created_at.desc())).all()
-    return {'items': [_trash_row(version) for version in rows]}
+    return {'items': _trash_rows(db, user)}
 
 
 @router.post('/api/admin/document-trash/documents/{document_id}/restore')

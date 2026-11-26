@@ -697,3 +697,9 @@ body[aria-busy="true"] .content { cursor: progress; }
 .dj-optional-add h4 { margin: 0 0 8px; font: 600 14px/1.35 var(--fx-font); color: var(--fx-navy); }
 .dj-optional-add .field { margin: 0; }
 .dj-optional-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+
+/* Corbeille : suppression définitive (action destructrice signalée sans nouveau composant). */
+.trash-table .trash-purge { color: var(--fx-danger); }
+.modal .primary.danger { background: var(--fx-danger); border-color: var(--fx-danger); }
+.modal .primary.danger:disabled { opacity: .55; cursor: not-allowed; }
+.trash-clearance { border: 1px dashed var(--fx-line); border-radius: var(--fx-radius); padding: 12px 14px; margin: 10px 0; background: var(--fx-surface); }

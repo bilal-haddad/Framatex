@@ -35,7 +35,7 @@ REVISIONS = ('0001_baseline', '0002_launch_scope', '0003_pilot_reports', '0004_c
              '0008_optional_rules', '0009_visible_checklist_duplicates', '0010_document_intake',
              '0011_business_memory', '0012_document_intelligence', '0012b_document_search',
              '0013_access_management', '0014_business_memory_folder_access',
-             '0015_document_soft_deletion', '0016_order_sheet', '0017_optional_documents')
+             '0015_document_soft_deletion', '0016_order_sheet', '0017_optional_documents', '0018_document_purge')
 
 
 def _versions(conn):
@@ -79,7 +79,7 @@ def migrate():
                                 'pending_document_uploads', 'document_identifications',
                                 'business_partners', 'business_partner_aliases', 'launch_partners',
                                 'internal_experience_decisions', 'collaborator_profiles',
-                                'launch_assignments', 'legacy_access_proposals', 'optional_document_cases'}
+                                'launch_assignments', 'legacy_access_proposals', 'optional_document_cases', 'storage_purge_queue', 'retention_clearances'}
                 missing = (set(Base.metadata.tables) - later_tables) - existing
                 if missing:
                     raise RuntimeError('Base antérieure incomplète : tables manquantes : ' + ', '.join(sorted(missing)))
@@ -270,6 +270,23 @@ def migrate():
             conn.execute(text('CREATE INDEX IF NOT EXISTS ix_documents_optional_case_id ON documents (optional_case_id)'))
             conn.execute(text('INSERT INTO schema_migrations VALUES (:v, :d)'),
                          {'v':'0017_optional_documents','d':datetime.now(timezone.utc).isoformat()})
+        if '0018_document_purge' not in done:
+            # Suppression définitive : file d'effacement des fichiers et vérifications de conservation.
+            conn.execute(text("""CREATE TABLE IF NOT EXISTS storage_purge_queue (
+              id VARCHAR(36) PRIMARY KEY, disk_name VARCHAR(80) NOT NULL, created_at DATETIME NOT NULL,
+              done_at DATETIME, outcome VARCHAR(40))"""))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_storage_purge_queue_disk_name ON storage_purge_queue (disk_name)'))
+            conn.execute(text("""CREATE TABLE IF NOT EXISTS retention_clearances (
+              id VARCHAR(36) PRIMARY KEY, document_id VARCHAR(36) NOT NULL, version_id VARCHAR(36),
+              reason TEXT NOT NULL, cleared_by VARCHAR(36) NOT NULL REFERENCES users(id), cleared_at DATETIME NOT NULL)"""))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_retention_clearances_document_id ON retention_clearances (document_id)'))
+            # Index de performance mesurés (P0 optimisation) : versions par document, audit par cible et par date.
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_document_versions_document_id ON document_versions (document_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_document_versions_sha256 ON document_versions (sha256)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_audit_events_target_id ON audit_events (target_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_audit_events_occurred_at ON audit_events (occurred_at)'))
+            conn.execute(text('INSERT INTO schema_migrations VALUES (:v, :d)'),
+                         {'v':'0018_document_purge','d':datetime.now(timezone.utc).isoformat()})
         # Defensive consistency check: pre-0.15 historical tables stay untouched.
         cols = {c['name'] for c in inspect(conn).get_columns('launches')}
         if 'restricted' not in cols or 'launch_members' not in inspect(conn).get_table_names():

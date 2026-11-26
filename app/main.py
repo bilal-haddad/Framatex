@@ -63,6 +63,9 @@ async def lifespan(app: FastAPI):
     from .document_intake_routes import clean_expired
     with SessionLocal() as db:
         clean_expired(db)
+    # Reprise des effacements de fichiers interrompus (suppression définitive validée en base).
+    from .document_purge import process_purge_queue
+    process_purge_queue()
     yield
 
 app = FastAPI(title="Framatex · Dossier jaune", version="0.17.0", lifespan=lifespan)
@@ -950,3 +953,7 @@ app.include_router(document_preview_router)
 # Documents complémentaires facultatifs (0017_optional_documents).
 from .optional_documents import router as optional_documents_router
 app.include_router(optional_documents_router)
+
+# Suppression définitive depuis la corbeille (administrateur, 0018_document_purge).
+from .document_purge import router as document_purge_router
+app.include_router(document_purge_router)
