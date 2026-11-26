@@ -60,7 +60,7 @@ def priorities(user: User = Depends(get_current_user), db: Session = Depends(get
     return build_priorities(user, db)
 
 
-def build_priorities(user, db, launch=None):
+def build_priorities(user, db, launch=None, cache=None):
     """Liste consolidée, seulement des éléments dont les sources sont lisibles.
 
     Priorités déterministes : 0 échéance dépassée, 1 anomalie/action à traiter,
@@ -78,7 +78,7 @@ def build_priorities(user, db, launch=None):
         # Habilitations par commande : chaque priorité est évaluée sur sa propre commande.
         from .access_control import launch_scope
         with launch_scope(launch.id):
-            report = evaluate(db, launch, user, permitted)
+            report = cache[launch.id] if cache is not None and launch.id in cache else evaluate(db, launch, user, permitted)
             for row in report.get("rows", []):
                 labels = {'missing': ('missing', 'Pièce manquante'), 'pending_validation': ('validation', 'Validation à obtenir'),
                           'to_verify': ('identification', 'Type à vérifier'), 'incompatible': ('identification', 'Type incompatible')}

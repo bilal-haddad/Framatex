@@ -110,3 +110,44 @@ def test_storage_queue_never_erases_a_referenced_file():
         db.add(StoragePurge(disk_name=db.get(DocumentVersion, doc['latest']['id']).disk_name)); db.commit()
     process_purge_queue()
     assert path.is_file()
+
+
+def test_order_creation_is_idempotent():
+    """Double envoi (double clic, renvoi après coupure) avec la même clé : une seule commande."""
+    import concurrent.futures
+    c = chef()
+    name = f'Idempotence {uuid.uuid4().hex[:6]}'
+    key = uuid.uuid4().hex
+    first = c.post('/api/order-sheets', headers={**H, 'Idempotency-Key': key}, json={'name': name})
+    second = c.post('/api/order-sheets', headers={**H, 'Idempotency-Key': key}, json={'name': name})
+    assert first.status_code == second.status_code == 201 and first.json()['id'] == second.json()['id']
+    other = c.post('/api/order-sheets', headers={**H, 'Idempotency-Key': uuid.uuid4().hex}, json={'name': name})
+    assert other.json()['id'] != first.json()['id']                                  # nouvelle clé : nouvelle commande
+    assert c.post('/api/order-sheets', headers={**H, 'Idempotency-Key': 'x'}, json={'name': name}).status_code == 422
+    # Envois simultanés avec la même clé.
+    key = uuid.uuid4().hex
+    with concurrent.futures.ThreadPoolExecutor(4) as pool:
+        results = list(pool.map(lambda _: c.post('/api/order-sheets', headers={**H, 'Idempotency-Key': key}, json={'name': name + ' bis'}), range(4)))
+    ids = {r.json()['id'] for r in results if r.status_code == 201}
+    assert len(ids) == 1, [r.status_code for r in results]
+    names = [l['name'] for l in c.get('/api/launches').json()]
+    assert names.count(name + ' bis') == 1
+
+
+def test_supervision_and_hardening():
+    from fastapi.testclient import TestClient
+    from app.core import make_token
+    from app.main import app
+    c = chef()
+    r = c.get('/api/health/ready')
+    assert r.status_code == 200 and r.json()['checks']['database'] == 'ok' and 'X-Request-ID' in r.headers
+    assert c.get('/api/auth/me', headers={'X-Request-ID': 'proxy-1234abcd'}).headers['X-Request-ID'] == 'proxy-1234abcd'
+    assert c.get('/metrics').status_code == 404                                     # sans jeton : invisible
+    # Un jeton de l'espace Client n'ouvre jamais l'espace interne.
+    import jwt, datetime
+    from app.core import SECRET_KEY
+    me = c.get('/api/auth/me').json()
+    forged = jwt.encode({'sub': me['id'], 'typ': 'client', 'jti': 'a' * 32, 'iat': datetime.datetime.now(datetime.timezone.utc),
+                         'exp': datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)}, SECRET_KEY, algorithm='HS256')
+    other = TestClient(app); other.cookies.set('framat_session', forged)
+    assert other.get('/api/auth/me').status_code == 401

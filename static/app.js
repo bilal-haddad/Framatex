@@ -128,19 +128,17 @@ async function optionalLaunchRequest(label,promise,fallback,warnings){
   return fallback;
  }
 }
-async function openLaunch(id,folder=null,loadToken=null){
- const enc=encodeURIComponent(id),warnings=[];
+async function openLaunch(id,folder=null,loadToken=null,options={}){
+ const enc=encodeURIComponent(id),warnings=[],secondary=options.secondary!==false;
  // Les habilitations peuvent changer pendant une session : les décisions d'UI
  // doivent utiliser le même état courant que les contrôles serveur.
  state.me=await api('/api/auth/me');
  // Seules l'identité du lancement et sa complétude sont indispensables à son
  // ouverture. Un module secondaire indisponible ne doit pas condamner l'écran.
- const [detail,completeness]=await Promise.all([
-  api(`/api/launches/${enc}`),api(`/api/launches/${enc}/completeness`)
- ]);
+ // Les modules des onglets Contrôles, Communication et Historique ne sont chargés
+ // qu'à la demande (secondary) ; toutes les requêtes partent en parallèle.
  const optional=(label,path,fallback)=>optionalLaunchRequest(label,api(path),fallback,warnings);
- const [reviews,values,impacts,fields,quality,excels,specs,mails,simGraph,simHistory,orliReconciliation,materials,approvalOverview,clientPublications,supplierRequests]=await Promise.all([
-  optional('revues documentaires',`/api/launches/${enc}/reviews`,[]),
+ const secondaryLoads=secondary?[
   optional('valeurs métier',`/api/launches/${enc}/values`,[]),
   optional('impacts',`/api/launches/${enc}/impacts`,[]),
   optional('champs métier','/api/business-value-fields',[]),
@@ -155,12 +153,18 @@ async function openLaunch(id,folder=null,loadToken=null){
   optional('circuits de validation',`/api/launches/${enc}/approval-overview`,null),
   optional('publications client',`/api/launches/${enc}/client-publications`,null),
   optional('demandes fournisseur',`/api/launches/${enc}/supplier-requests`,null)
+ ]:[];
+ const [detail,completeness,reviews,...rest]=await Promise.all([
+  api(`/api/launches/${enc}`),api(`/api/launches/${enc}/completeness`),
+  optional('revues documentaires',`/api/launches/${enc}/reviews`,[]),...secondaryLoads
  ]);
+ const [values,impacts,fields,quality,excels,specs,mails,simGraph,simHistory,orliReconciliation,materials,approvalOverview,clientPublications,supplierRequests]=rest;
  if(loadToken&&state.djLoadToken!==loadToken)return null;
  const requested=detail.folders.find(item=>item.slug===folder&&item.can_read);
  const selected=requested||detail.folders.find(item=>item.can_read);
  if(!selected){const error=new Error('Aucun sous-dossier autorisé pour cette commande.');error.status=403;throw error}
- const fresh={clientPublications,supplierRequests,approvalOverview,materials,orliReconciliation,simGraph,simHistory,mailReport:mails,specReport:specs,qualityReport:quality,excelInspections:excels,detail,completeness,workflowReviews:reviews,workflowValues:values,workflowImpacts:impacts,workflowFields:fields,launchLoadWarnings:warnings,view:'detail',folder:selected.slug};
+ const fresh={detail,completeness,workflowReviews:reviews,launchLoadWarnings:warnings,view:'detail',folder:selected.slug,
+  ...(secondary?{clientPublications,supplierRequests,approvalOverview,materials,orliReconciliation,simGraph,simHistory,mailReport:mails,specReport:specs,qualityReport:quality,excelInspections:excels,workflowValues:values,workflowImpacts:impacts,workflowFields:fields}:{})};
  // Chargement piloté par le Dossier Jaune : l'état est appliqué d'un seul bloc par l'appelant,
  // avec les modules annexes, pour qu'aucun écran ne mélange données anciennes et récentes.
  if(loadToken)return fresh;

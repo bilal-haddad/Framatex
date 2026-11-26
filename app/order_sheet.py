@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -130,10 +130,16 @@ def update_sheet(launch_id: str, payload: SheetIn, user: User = Depends(get_curr
 
 
 @router.post("/api/order-sheets", status_code=201)
-def create_with_sheet(payload: SheetCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Création d'un Dossier Jaune avec sa fiche complète, en une seule transaction."""
+def create_with_sheet(payload: SheetCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db),
+                      idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+    """Création d'un Dossier Jaune avec sa fiche complète, en une seule transaction (idempotente)."""
+    from .idempotency import check_key, commit_or_replay, remember, replay
     audit, must, _ = _deps()
     must(user, "launch.create")
+    key = check_key(idempotency_key)
+    previous = replay(db, user, "order-sheet.create", key)
+    if previous is not None:
+        return previous
     import os
     from .main import FOLDERS
     from .models import Folder, Launch
@@ -147,6 +153,7 @@ def create_with_sheet(payload: SheetCreate, user: User = Depends(get_current_use
     changes = apply_sheet(db, user, launch, values)
     audit(db, user, "launch.create", "launch", launch.id, {"name": launch.name, "orli": None,
           "sheet": {field: change["after"] for field, change in changes.items() if field != "name"}})
-    db.commit()
     from .main import launch_out
-    return launch_out(launch)
+    created = launch_out(launch)
+    remember(db, user, "order-sheet.create", key, created)
+    return commit_or_replay(db, user, "order-sheet.create", key) or created

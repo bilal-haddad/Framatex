@@ -135,7 +135,11 @@ def run(output: Path, base: str, admin_email: str, admin_password: str):
         )
         page.locator('[data-ops-target]', has_text="COSTUME-001").click()
         expect(page.locator("#ops-launch-summary")).to_contain_text("COSTUME-001")
+        # Les modules secondaires sont chargés à l'ouverture de leur onglet : le refus survient là,
+        # et la commande reste utilisable.
+        page.click('[data-dj-tab="communication"]')
         expect(page.locator('.error[role="status"]')).to_contain_text("module(s) secondaire(s)")
+        page.click('[data-dj-tab="documents"]')
         expect(page.locator('.dj-folder[data-folder="bleu"]')).not_to_have_class("is-locked")
         page.locator('.dj-folder[data-folder="bleu"]').click()
         expect(page.locator('[data-folder-panel="bleu"]')).to_be_visible()

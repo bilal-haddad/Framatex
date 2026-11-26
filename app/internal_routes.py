@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -110,24 +110,44 @@ def save_operations(launch_id: str, payload: OperationsPayload,
 
 
 @router.get("/api/workspace/launches")
-def launches(q: str = "", client: str = "", article: str = "", status: str = "",
+def launches(response: Response, q: str = "", client: str = "", article: str = "", status: str = "",
              completion: str = "", with_alert: bool = False, date_from: date | None = None,
-             date_to: date | None = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+             date_to: date | None = None, limit: int | None = Query(None, ge=1, le=500), offset: int = Query(0, ge=0),
+             user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Commandes visibles, filtrées puis paginées (en-tête X-Total-Count).
+
+    Les critères simples (référence, client, article, statut) sont appliqués avant le calcul des
+    synthèses : seules les commandes de la page demandée sont évaluées. Les critères qui dépendent de
+    la synthèse (complétude, alertes, dates d'activité) exigent l'évaluation de toutes les candidates."""
     must, _, _, _ = guards()
     must(user, "launch.read")
-    rows = [launch_summary(db, user, row) for row in visible_launches(db, user)]
+    candidates = visible_launches(db, user)
+    ops = {row.launch_id: row for row in db.scalars(select(LaunchOperations).where(
+        LaunchOperations.launch_id.in_([launch.id for launch in candidates])))} if candidates else {}
+
+    def cheap(launch):
+        o = ops.get(launch.id)
+        searchable = " ".join(str(v or "") for v in (launch.name, launch.client_name, launch.order_ref, launch.orli_ref,
+                                                     o.article if o else None, o.provisional_ref if o else None, o.definitive_ref if o else None))
+        return (q.casefold() in searchable.casefold() and client.casefold() in (launch.client_name or "").casefold()
+                and article.casefold() in ((o.article if o else None) or launch.name).casefold()
+                and (not status or status == launch.status))
+    candidates = [launch for launch in candidates if cheap(launch)]
+    needs_summary = bool(completion or with_alert or date_from or date_to)
+
     def matches(row):
-        searchable = " ".join(str(row.get(k) or "") for k in (
-            "name", "client_name", "order_ref", "orli_ref", "article", "provisional_ref", "definitive_ref"))
         updated = date.fromisoformat(row["last_activity"][:10])
-        return (q.casefold() in searchable.casefold()
-                and client.casefold() in (row["client_name"] or "").casefold()
-                and article.casefold() in (row["article"] or row["name"]).casefold()
-                and (not status or status == row["status"])
-                and (not completion or completion == row["completion"]["state"])
-                and (not with_alert or row["alerts"] > 0)
+        return ((not completion or completion == row["completion"]["state"]) and (not with_alert or row["alerts"] > 0)
                 and (not date_from or updated >= date_from) and (not date_to or updated <= date_to))
-    return [row for row in rows if matches(row)]
+    if needs_summary:
+        rows = [row for row in (launch_summary(db, user, launch, light=True) for launch in candidates) if matches(row)]
+        total, rows = len(rows), rows[offset:offset + limit] if limit else rows[offset:]
+    else:
+        total = len(candidates)
+        page = candidates[offset:offset + limit] if limit else candidates[offset:]
+        rows = [launch_summary(db, user, launch, light=True) for launch in page]
+    response.headers["X-Total-Count"] = str(total)
+    return rows
 
 
 class DuplicateReviewPayload(BaseModel):
@@ -184,7 +204,8 @@ def dashboard_report(user, db, launch=None):
     must(user, "launch.read")
     from .workspace_routes import build_priorities
     launches = [launch] if launch else visible_launches(db, user)
-    summaries = [launch_summary(db, user, launch) for launch in launches]
+    cache = {}                                      # complétude évaluée une fois par commande
+    summaries = [launch_summary(db, user, item, cache=cache) for item in launches]
     active = summaries if launch else [row for row in summaries if row["status"] != "Clôturé"]
     pending = sum(f.get("pending_validation", 0) for row in active for f in row["folders"])
     missing = [{"launch_id": row["id"], "launch_name": row["name"], "order_ref": row["order_ref"],
@@ -216,7 +237,7 @@ def dashboard_report(user, db, launch=None):
                                     "folder": latest["folder"], "title": latest["title"],
                                     "document_id": latest["document_id"], "sha256": group["sha256"],
                                     "status": "duplicate", "documents": group["documents"]})
-    priority_report = build_priorities(user, db, launch)
+    priority_report = build_priorities(user, db, launch, cache=cache)
     identification_items = [{'launch_id': row['id'], 'launch_name': row['name'], 'order_ref': row['order_ref'],
                              'client_name': row['client_name'], 'article': row['article'],
                              **requirement}
@@ -234,7 +255,9 @@ def dashboard_report(user, db, launch=None):
                      'deposited_documents': sum(f.get('documents', 0) for row in active for f in row['folders']),
                      "unconfigured_launches": sum(r["completion"]["state"] == "unconfigured" for r in active),
                      "partial_launches": sum(r["completion"]["state"] == "partial" for r in active)},
-            "launches": summaries, "missing_documents": missing, "priorities": priority_report,
+            # Lignes d'exigences déjà ventilées ci-dessus (manquants, validations, types) : non répétées.
+            "launches": [{**row, "folders": [{k: v for k, v in f.items() if k != "requirements"} for f in row["folders"]]} for row in summaries],
+            "missing_documents": missing, "priorities": priority_report,
             "pending_validation_documents": pending_items, "duplicate_documents": duplicate_items,
             'identification_documents': identification_items,
             "activity": activity(db, user, launch_id=launch.id if launch else None, limit=12)["items"]}
@@ -336,10 +359,11 @@ def my_launches(q: str = Query("", max_length=200), folder: Literal["", "jaune",
     content_matches = search_content(db, q) if q.strip() else {}
     hits = {}                                   # commande → {sous-dossier: [références trouvées]}
     if needle and launch_rows:
-        documents = db.scalars(select(Document).join(Folder).where(
+        from sqlalchemy.orm import selectinload
+        documents = db.execute(select(Document, Folder).join(Folder).options(selectinload(Document.versions)).where(
             Folder.launch_id.in_(list(launch_rows)), Document.deleted_at.is_(None))).all()
-        for document in documents:
-            lid, slug = document.folder.launch_id, document.folder.slug
+        for document, folder_row in documents:
+            lid, slug = folder_row.launch_id, folder_row.slug
             if slug not in readable[lid]:
                 continue                        # sous-dossier non autorisé : jamais consulté
             versions = active_versions(document)
@@ -376,24 +400,32 @@ def search(q: str = "", folder: str = "", doc_type: str = "", launch_id: str = "
     matched_launches = [{"launch_id": lid, "name": launch_rows[lid].name, "order_ref": launch_rows[lid].order_ref,
                          "client_name": launch_rows[lid].client_name, **launch_info[lid]}
                         for lid in launch_rows if needle and needle in launch_text[lid] and (not launch_id or lid == launch_id)]
-    query = select(DocumentVersion).join(Document).order_by(DocumentVersion.created_at.desc())
-    for version in db.scalars(query):
-        document = version.document
-        if document.deleted_at is not None or version.deleted_at is not None:
-            continue
-        launch = launch_rows.get(document.folder.launch_id)
-        if not launch or not can(user, "document.read", document.folder.slug, launch.id):
-            continue
-        if folder and folder != document.folder.slug or launch_id and launch_id != launch.id:
+    # Une seule requête jointe, filtrée en SQL (commandes visibles, éléments actifs, sous-dossier,
+    # commande) : plus de chargement paresseux du document et du sous-dossier pour chaque version.
+    from .models import Folder
+    query = (select(DocumentVersion, Document, Folder).join(Document, DocumentVersion.document_id == Document.id)
+             .join(Folder, Document.folder_id == Folder.id)
+             .where(Folder.launch_id.in_(list(launch_rows)), Document.deleted_at.is_(None), DocumentVersion.deleted_at.is_(None))
+             .order_by(DocumentVersion.created_at.desc()))
+    if folder:
+        query = query.where(Folder.slug == folder)
+    if launch_id:
+        query = query.where(Folder.launch_id == launch_id)
+    readable = {}
+    for version, document, folder_row in (db.execute(query).all() if launch_rows else []):
+        launch = launch_rows[folder_row.launch_id]
+        key = (launch.id, folder_row.slug)
+        if key not in readable:
+            readable[key] = can(user, "document.read", folder_row.slug, launch.id)
+        if not readable[key]:
             continue
         if doc_type and fold(doc_type) not in fold(document.doc_type):
             continue
         day = version.created_at.date()
         if date_from and day < date_from or date_to and day > date_to:
             continue
-        text = launch_text[launch.id] + " " + fold(" ".join(str(value or "") for value in (
-            document.title, document.doc_type, version.original_name, version.sha256)))
-        if needle not in text and version.id not in content_matches:
+        if needle and needle not in launch_text[launch.id] and version.id not in content_matches and needle not in fold(
+                " ".join(str(value or "") for value in (document.title, document.doc_type, version.original_name, version.sha256))):
             continue
         results.append((launch, document, version))
     # Détails coûteux (auteur, état documentaire) calculés pour la seule page renvoyée.

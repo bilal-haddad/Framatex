@@ -77,8 +77,9 @@ operationsAudit = async function() {
     const report = await api('/api/workspace/activity?' + params);
     if (mine !== seq) return;
     const box = app.querySelector('#ops-audit-results');
-    box.innerHTML = `<p class="ops-muted">${report.total} opération(s) · ${offset + 1}–${offset + report.items.length}</p>${histRows(report.items)}
-      <div class="hist-pager">${offset ? '<button type="button" class="secondary tiny" data-hist-prev>Précédentes</button>' : ''}${offset + report.items.length < report.total ? '<button type="button" class="secondary tiny" data-hist-next>Suivantes</button>' : ''}</div>`;
+    const more = report.has_more ?? (offset + report.items.length < report.total);
+    box.innerHTML = `<p class="ops-muted">${report.total ?? `${offset + report.items.length}${more ? '+' : ''}`} opération(s) · ${report.items.length ? `${offset + 1}–${offset + report.items.length}` : '0'}</p>${histRows(report.items)}
+      <div class="hist-pager">${offset ? '<button type="button" class="secondary tiny" data-hist-prev>Précédentes</button>' : ''}${more ? '<button type="button" class="secondary tiny" data-hist-next>Suivantes</button>' : ''}</div>`;
     box.querySelector('[data-hist-prev]')?.addEventListener('click', () => { offset = Math.max(0, offset - 50); draw().catch(showErr); });
     box.querySelector('[data-hist-next]')?.addEventListener('click', () => { offset += 50; draw().catch(showErr); });
   };

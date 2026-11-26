@@ -64,6 +64,8 @@ openNewLaunch = function() {
     clients = list;
     slot.outerHTML = `<select id="sheet-client_account_id"><option value="">Non rattaché</option>${list.map(c => `<option value="${e(c.id)}">${e(c.client_code)} · ${e(c.raison_sociale)}</option>`).join('')}</select>`;
   });
+  // Clé d'idempotence propre à ce formulaire : un double envoi ne crée qu'une commande.
+  overlay.querySelector('#new-launch-form').dataset.idempotencyKey = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   overlay.querySelector('#new-launch-form').onsubmit = async event => {
     event.preventDefault();
     const button = event.target.querySelector('[type=submit]');
@@ -71,7 +73,7 @@ openNewLaunch = function() {
     if (!values.name || values.name.length < 2) { overlay.querySelector('#sheet-error').innerHTML = '<div class="error">Indiquez le nom de la commande.</div>'; return; }
     button.disabled = true;
     try {
-      const created = await api('/api/order-sheets', {method: 'POST', body: JSON.stringify(values)});
+      const created = await api('/api/order-sheets', {method: 'POST', body: JSON.stringify(values), headers: {'Idempotency-Key': event.target.dataset.idempotencyKey}});
       closeModal(); toast('Dossier Jaune créé avec sa fiche commande.');
       await openLaunch(created.id, 'jaune');
     } catch (error) { button.disabled = false; overlay.querySelector('#sheet-error').innerHTML = `<div class="error">${e(error.message)}</div>`; }

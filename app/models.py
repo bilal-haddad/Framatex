@@ -161,3 +161,16 @@ class RetentionClearance(Base):
     reason: Mapped[str] = mapped_column(Text)
     cleared_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
     cleared_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class IdempotencyKey(Base):
+    """Réponse d'une création déjà traitée pour une clé fournie par le client (double clic, renvoi
+    après coupure réseau) : la même clé ne crée jamais deux fois le même élément."""
+    __tablename__ = "idempotency_keys"
+    __table_args__ = (UniqueConstraint("user_id", "scope", "key"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(String(36))
+    scope: Mapped[str] = mapped_column(String(60))
+    key: Mapped[str] = mapped_column(String(80))
+    response: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

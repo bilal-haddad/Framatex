@@ -20,11 +20,17 @@ from .models import User
 def duplicate_groups(db, user, launch):
     from .main import permitted
     by_digest = defaultdict(list)
+    from sqlalchemy.orm import selectinload
+    from .models import Document
+    documents = defaultdict(list)
+    for document in db.scalars(select(Document).options(selectinload(Document.versions)).where(
+            Document.folder_id.in_([f.id for f in launch.folders]), Document.deleted_at.is_(None))):
+        documents[document.folder_id].append(document)
     for folder in launch.folders:
         if not (permitted(user, "document.read", folder.slug)
                 and permitted(user, "controls.read", folder.slug)):
             continue
-        for document in folder.documents:
+        for document in documents.get(folder.id, []):
             current = current_version(document)      # documents et versions supprimés exclus
             if current is not None:
                 by_digest[current.sha256].append((folder.slug, document, current))

@@ -128,6 +128,8 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(401, "Connexion nécessaire")
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        if payload.get("typ") == "client":            # jeton de l'espace Client : jamais valable ici
+            raise HTTPException(401, "Session expirée ou invalide")
         session_id = payload.get("jti")
         if not isinstance(session_id, str) or len(session_id) != 32:
             raise HTTPException(401, "Session précédente expirée : veuillez vous reconnecter")

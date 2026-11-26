@@ -105,7 +105,8 @@ def guard_http_request(request: Request):
         return None
     token = request.cookies.get(COOKIE)
     try:
-        subject = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])['sub'] if token else None
+        claims = jwt.decode(token, SECRET_KEY, algorithms=['HS256']) if token else {}
+        subject = None if claims.get('typ') == 'client' else claims.get('sub')
     except (jwt.InvalidTokenError, KeyError):
         subject = None
     if not subject:

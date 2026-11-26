@@ -37,43 +37,60 @@ def _evaluate(db: Session, launch: Launch, user, permitted):
                                           key=lambda r: (PHASE_RANK[r.due_phase], r.folder_slug, r.title.casefold()))
     visible = [r for r in rules if permitted(user, "document.read", r.folder_slug)]
     rows = []
-    for rule in visible:
-        matching = db.scalars(select(Document).join(Folder).where(
-            Folder.launch_id == launch.id, Folder.slug == rule.folder_slug,
-            Document.doc_type == rule.document_type, Document.deleted_at.is_(None)
-        )).all()
-        candidates = []
-        for document in matching:
+    # Lectures groupées (une requête par nature d'information, et non plus par exigence ni par
+    # version) : documents actifs et leurs versions, identifications, validations, décisions,
+    # dérogations. Résultat identique à l'évaluation exigence par exigence.
+    from sqlalchemy.orm import selectinload
+    from .workflow_models import DocumentReview
+    wanted = {(r.folder_slug, r.document_type) for r in visible}
+    by_kind = {}
+    if wanted:
+        for document in db.scalars(select(Document).join(Folder).options(selectinload(Document.versions), selectinload(Document.folder)).where(
+                Folder.launch_id == launch.id, Document.deleted_at.is_(None),
+                Document.doc_type.in_({kind for _, kind in wanted}))).all():
+            by_kind.setdefault((document.folder.slug, document.doc_type), []).append(document)
+    current = {}
+    for documents in by_kind.values():
+        for document in documents:
             versions = [version for version in document.versions if version.deleted_at is None]
             if versions:
-                version = max(versions, key=lambda v: v.number)
-                candidates.append((document, version))
+                current[document.id] = max(versions, key=lambda v: v.number)
+    version_ids = [version.id for version in current.values()]
+    identifications_all = {item.version_id: item for item in db.scalars(select(DocumentIdentification).where(
+        DocumentIdentification.version_id.in_(version_ids)))} if version_ids else {}
+    validations_all = {}
+    for item in db.scalars(select(RequirementValidation).where(RequirementValidation.launch_id == launch.id)):
+        validations_all.setdefault(item.rule_id, set()).add(item.document_version_id)
+    latest_decision = {}
+    if version_ids:
+        for review in db.scalars(select(DocumentReview).where(DocumentReview.document_version_id.in_(version_ids))
+                                 .order_by(DocumentReview.reviewed_at, DocumentReview.id)):
+            latest_decision[review.document_version_id] = review          # la plus récente l'emporte
+    exceptions_all = {}
+    for item in db.scalars(select(RequirementException).where(RequirementException.launch_id == launch.id,
+                                                               RequirementException.active.is_(True))):
+        exceptions_all.setdefault(item.rule_id, item)
+    for rule in visible:
+        candidates = [(document, current[document.id]) for document in by_kind.get((rule.folder_slug, rule.document_type), [])
+                      if document.id in current]
         # Une validation d'une version ancienne ne valide jamais la version courante.
-        identifications = {version.id: db.get(DocumentIdentification, version.id) for _, version in candidates}
+        identifications = {version.id: identifications_all.get(version.id) for _, version in candidates}
         conforming = [(doc, version) for doc, version in candidates
                       if not identifications[version.id] or identifications[version.id].status in {'matched', 'confirmed'}]
         validated = set()
         if candidates and rule.requires_validation:
-            version_ids = [version.id for _, version in candidates]
-            validations = db.scalars(select(RequirementValidation).where(
-                RequirementValidation.rule_id == rule.id,
-                RequirementValidation.launch_id == launch.id,
-                RequirementValidation.document_version_id.in_(version_ids)
-            )).all()
-            validated = {v.document_version_id for v in validations}
+            version_ids_rule = {version.id for _, version in candidates}
+            validated = validations_all.get(rule.id, set()) & version_ids_rule
             # Les décisions documentaires 0.3 ont priorité sur les validations 0.2
             # lorsqu'elles portent sur la même version courante.
             for _, current_version in candidates:
-                decision = latest_review(db, current_version.id)
+                decision = latest_decision.get(current_version.id)
                 if decision:
                     if decision.decision == 'approved':
                         validated.add(current_version.id)
                     else:
                         validated.discard(current_version.id)
-        exception = db.scalar(select(RequirementException).where(
-            RequirementException.launch_id == launch.id, RequirementException.rule_id == rule.id,
-            RequirementException.active.is_(True)
-        ))
+        exception = exceptions_all.get(rule.id)
         due = rule.required and PHASE_RANK[phase] >= PHASE_RANK[rule.due_phase]
         if conforming and (not rule.requires_validation or any(v.id in validated for _, v in conforming)):
             status = "present"

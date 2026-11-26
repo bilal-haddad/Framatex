@@ -66,9 +66,17 @@ async def lifespan(app: FastAPI):
     # Reprise des effacements de fichiers interrompus (suppression définitive validée en base).
     from .document_purge import process_purge_queue
     process_purge_queue()
+    from .idempotency import purge_expired
+    with SessionLocal() as db:
+        purge_expired(db)
     yield
 
-app = FastAPI(title="Framatex · Dossier jaune", version="0.17.0", lifespan=lifespan)
+# Profil de production (FRAMATEX_ENV=production) : documentation d'API non publiée, sauf demande explicite.
+PRODUCTION = os.getenv("FRAMATEX_ENV", "").lower() == "production"
+API_DOCS = os.getenv("FRAMATEX_API_DOCS", "0" if PRODUCTION else "1") == "1"
+app = FastAPI(title="Framatex · Dossier jaune", version="0.17.0", lifespan=lifespan,
+              docs_url="/docs" if API_DOCS else None, redoc_url="/redoc" if API_DOCS else None,
+              openapi_url="/openapi.json" if API_DOCS else None)
 app.add_middleware(InternalUploadBodyLimit)
 
 # Sous Windows, mimetypes lit le registre, qui déclare souvent .js (parfois .css)
@@ -118,6 +126,8 @@ async def request_header_guard(request: Request, call_next):
 @app.middleware("http")
 async def response_security_headers(request: Request, call_next):
     response = await call_next(request)
+    if os.getenv("FRAMATEX_COOKIE_SECURE") == "1":      # servi en HTTPS (proxy) : HSTS
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "same-origin")
@@ -957,3 +967,16 @@ app.include_router(optional_documents_router)
 # Suppression définitive depuis la corbeille (administrateur, 0018_document_purge).
 from .document_purge import router as document_purge_router
 app.include_router(document_purge_router)
+
+# Supervision technique : identifiant de requête, journal d'accès JSON, santé « prêt », métriques.
+# Ajouté en dernier : enveloppe toutes les autres couches (durée et statut réels, erreurs comprises).
+import logging as _logging
+from .observability import request_observability, router as observability_router
+app.include_router(observability_router)
+app.middleware("http")(request_observability)
+if os.getenv("FRAMATEX_ACCESS_LOG", "1") == "1" and not _logging.getLogger("framatex.access").handlers:
+    _handler = _logging.StreamHandler()
+    _handler.setFormatter(_logging.Formatter("%(message)s"))
+    _logging.getLogger("framatex.access").addHandler(_handler)
+    _logging.getLogger("framatex.access").setLevel(_logging.INFO)
+    _logging.getLogger("framatex.access").propagate = False

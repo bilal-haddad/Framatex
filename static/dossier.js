@@ -70,29 +70,32 @@ function djInitialUi() {
 state.dj = djInitialUi();
 
 // --------------------------------------------------------------------------- chargement
-async function djLoadExtras(id) {
+async function djLoadExtras(id, secondary = true) {
   const enc = encodeURIComponent(id);
   const warnings = [];
   const optional = async (label, promise, fallback) => {
     try { return await promise; }
     catch (error) {
-      if (error.status === 401) throw error;
+      if (error.status === 401 || error.cancelled) throw error;
       warnings.push({label, message: error.message || String(error), status: error.status || null});
       console.error(`Chargement secondaire impossible (${label})`, error);
       return fallback;
     }
   };
-  const [summary, notes, activity, duplicates] = await Promise.all([
+  // Synthèse et doublons : toujours (en-tête, compteurs, onglet Documents). Mémoire, activité et
+  // demande Client : avec les modules des autres onglets, à la demande.
+  const [summary, duplicates, notes, activity] = await Promise.all([
     optional('synthèse opérationnelle', api(`/api/launches/${enc}/operations`), {}),
-    can('document.read', 'jaune') ? optional('mémoire métier', api(`/api/launches/${enc}/experience-notes`), []) : Promise.resolve([]),
-    can('audit.read') ? optional('activité récente', api(`/api/workspace/activity?launch_id=${enc}&limit=40`), null) : Promise.resolve(null),
     optional('détection des doublons', api(`/api/launches/${enc}/duplicates`), []),
+    secondary && can('document.read', 'jaune') ? optional('mémoire métier', api(`/api/launches/${enc}/experience-notes`), []) : Promise.resolve([]),
+    secondary && can('audit.read') ? optional('activité récente', api(`/api/workspace/activity?launch_id=${enc}&limit=40`), null) : Promise.resolve(null),
   ]);
   let request = null;
-  if (summary.client_request && state.me?.admin) {
+  if (secondary && summary.client_request && state.me?.admin) {
     request = await api(`/api/admin/client-order-requests/${encodeURIComponent(summary.client_request.id)}`).catch(() => null);
   }
-  return {operationsDetail: summary, djNotes: notes, djActivity: activity, djClientRequest: request, djDuplicates: duplicates, djLoadWarnings: warnings};
+  return {operationsDetail: summary, djDuplicates: duplicates, djLoadWarnings: warnings,
+    ...(secondary ? {djNotes: notes, djActivity: activity, djClientRequest: request} : {})};
 }
 
 const djOriginalOpenLaunch = openLaunch;
@@ -110,9 +113,14 @@ openLaunch = async function(id, folder = null, target = null) {
   state.djLoadToken = loadToken;
   if (!sameDossier) state.djSuspend = true;
   document.body?.setAttribute('aria-busy', 'true');
+  // Modules des onglets Contrôles / Communication / Historique : chargés seulement si l'un de ces
+  // onglets est (ou va être) affiché ; sinon ils le seront à son ouverture (synchronisation ciblée).
+  const nextTab = sameDossier && !(target && !target.keep && target.area) ? state.dj.tab
+    : target?.area && DJ_AREAS[target.area] ? DJ_AREAS[target.area][0] : 'documents';
+  const secondary = Boolean(target?.secondary) || nextTab !== 'documents';
   let fresh, extras;
   try {
-    [fresh, extras] = await Promise.all([djOriginalOpenLaunch(id, folder, loadToken), djLoadExtras(id)]);
+    [fresh, extras] = await Promise.all([djOriginalOpenLaunch(id, folder, loadToken, {secondary}), djLoadExtras(id, secondary)]);
   } finally {
     if (state.djLoadToken === loadToken) { state.djSuspend = false; document.body?.removeAttribute('aria-busy'); }
   }
@@ -123,6 +131,7 @@ openLaunch = async function(id, folder = null, target = null) {
   const inPlace = sameDossier && !(target && !target.keep) && (!folder || folder === requestedFolder);
   const userFolder = state.folder;
   Object.assign(state, fresh, extras);
+  state.djSecondaryFor = secondary ? id : null;           // modules secondaires à jour pour cette commande ?
   state.launchLoadWarnings = [...(fresh.launchLoadWarnings || []), ...(extras.djLoadWarnings || [])];
   if (!sameDossier) state.dj = djInitialUi();
   if (userMoved || inPlace) {
@@ -621,6 +630,7 @@ function djPanels() {
   const panels = DJ_TABS.map(([id]) => {
     let body;
     if (id === 'documents') body = ui.folderView ? djDocumentsPanel() : djFolderCards();
+    else if (state.djSecondaryFor !== state.detail.id) body = '<div class="fx-loading" role="status">Chargement des modules…</div>';
     else {
       const modules = DJ_MODULES[id].map(([key, label, render]) => [key, label, render()]).filter(([, , html]) => html && String(html).trim());
       if (!modules.some(([key]) => key === ui.module[id]) && modules.length) ui.module[id] = modules[0][0];
@@ -650,6 +660,9 @@ renderDetail = function() {
 
 function djSelectTab(tab, focus = false) {
   state.dj.tab = tab;
+  if (tab !== 'documents' && state.djSecondaryFor !== state.detail?.id && state.view === 'detail') {
+    openLaunch(state.detail.id, null, {keep: true, secondary: true}).catch(showErr);
+  }
   app.querySelectorAll('[data-dj-tab]').forEach(button => {
     const active = button.dataset.djTab === tab;
     button.setAttribute('aria-selected', String(active));

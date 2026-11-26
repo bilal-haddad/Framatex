@@ -35,7 +35,7 @@ REVISIONS = ('0001_baseline', '0002_launch_scope', '0003_pilot_reports', '0004_c
              '0008_optional_rules', '0009_visible_checklist_duplicates', '0010_document_intake',
              '0011_business_memory', '0012_document_intelligence', '0012b_document_search',
              '0013_access_management', '0014_business_memory_folder_access',
-             '0015_document_soft_deletion', '0016_order_sheet', '0017_optional_documents', '0018_document_purge')
+             '0015_document_soft_deletion', '0016_order_sheet', '0017_optional_documents', '0018_document_purge', '0019_idempotency')
 
 
 def _versions(conn):
@@ -79,7 +79,7 @@ def migrate():
                                 'pending_document_uploads', 'document_identifications',
                                 'business_partners', 'business_partner_aliases', 'launch_partners',
                                 'internal_experience_decisions', 'collaborator_profiles',
-                                'launch_assignments', 'legacy_access_proposals', 'optional_document_cases', 'storage_purge_queue', 'retention_clearances'}
+                                'launch_assignments', 'legacy_access_proposals', 'optional_document_cases', 'storage_purge_queue', 'retention_clearances', 'idempotency_keys'}
                 missing = (set(Base.metadata.tables) - later_tables) - existing
                 if missing:
                     raise RuntimeError('Base antérieure incomplète : tables manquantes : ' + ', '.join(sorted(missing)))
@@ -287,6 +287,13 @@ def migrate():
             conn.execute(text('CREATE INDEX IF NOT EXISTS ix_audit_events_occurred_at ON audit_events (occurred_at)'))
             conn.execute(text('INSERT INTO schema_migrations VALUES (:v, :d)'),
                          {'v':'0018_document_purge','d':datetime.now(timezone.utc).isoformat()})
+        if '0019_idempotency' not in done:
+            conn.execute(text("""CREATE TABLE IF NOT EXISTS idempotency_keys (
+              id VARCHAR(36) PRIMARY KEY, user_id VARCHAR(36) NOT NULL, scope VARCHAR(60) NOT NULL, key VARCHAR(80) NOT NULL,
+              response TEXT NOT NULL, created_at DATETIME NOT NULL, UNIQUE (user_id, scope, key))"""))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_idempotency_keys_created_at ON idempotency_keys (created_at)'))
+            conn.execute(text('INSERT INTO schema_migrations VALUES (:v, :d)'),
+                         {'v':'0019_idempotency','d':datetime.now(timezone.utc).isoformat()})
         # Defensive consistency check: pre-0.15 historical tables stay untouched.
         cols = {c['name'] for c in inspect(conn).get_columns('launches')}
         if 'restricted' not in cols or 'launch_members' not in inspect(conn).get_table_names():

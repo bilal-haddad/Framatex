@@ -54,17 +54,25 @@ def visible_launches(db, user):
     return visible(db, user, db.scalars(select(Launch).order_by(Launch.updated_at.desc())).all())
 
 
-def launch_summary(db, user, launch):
+def launch_summary(db, user, launch, cache=None, light=False):
+    """Synthèse d'une commande. `cache` : évaluations de complétude déjà calculées pour ce même
+    utilisateur dans ce même calcul (réutilisées par les priorités). `light` : sans les lignes
+    d'exigences par sous-dossier (listes et tableau de bord, qui ne les affichent pas)."""
     # Habilitations par commande : tous les contrôles de sous-dossier portent sur cette commande.
     from .access_control import launch_scope
     with launch_scope(launch.id):
-        return _launch_summary(db, user, launch)
+        summary = _launch_summary(db, user, launch, cache)
+    if light:
+        summary["folders"] = [{k: v for k, v in folder.items() if k != "requirements"} for folder in summary["folders"]]
+    return summary
 
 
-def _launch_summary(db, user, launch):
+def _launch_summary(db, user, launch, cache=None):
     from .main import launch_out, permitted
     from .quality_routes import quality_report
-    report = evaluate(db, launch, user, permitted)
+    report = cache.get(launch.id) if cache is not None and launch.id in cache else evaluate(db, launch, user, permitted)
+    if cache is not None:
+        cache[launch.id] = report
     quality = quality_report(launch.id, user, db)
     concerns = [r for r in quality["rows"] if r["status"] in {"difference", "unit_mismatch", "ambiguous"}
                 and (not r.get("decision") or r["decision"]["status"] == "to_correct")]
@@ -81,26 +89,34 @@ def _launch_summary(db, user, launch):
     timestamps = [launch.updated_at.isoformat()]
     if operations:
         timestamps.append(operations.updated_at.isoformat())
+    # Documents de la commande et leurs versions en deux requêtes (au lieu d'une par document).
+    from sqlalchemy.orm import selectinload
+    all_docs = db.scalars(select(Document).join(Folder).options(selectinload(Document.versions))
+                          .where(Folder.launch_id == launch.id)).all()
+    docs_by_folder = {}
+    for doc in all_docs:
+        docs_by_folder.setdefault(doc.folder_id, []).append(doc)
+    currents = {doc.id: current_version(doc) for doc in all_docs}
+    current_ids = [v.id for v in currents.values() if v is not None]
+    pending_runs = set(db.scalars(select(ApprovalRun.document_version_id).where(
+        ApprovalRun.document_version_id.in_(current_ids), ApprovalRun.status == "pending"))) if current_ids else set()
     for folder in launch.folders:
         if not permitted(user, "document.read", folder.slug):
             folders.append({"slug": folder.slug, "label": FOLDER_LABELS[folder.slug], "can_read": False})
             continue
         rows = [r for r in report["rows"] if r["folder"] == folder.slug]
-        docs = folder.documents
+        docs = docs_by_folder.get(folder.id, [])
         pending_ids = {d["id"] for row in rows if row["status"] == "pending_validation" for d in row["documents"]}
         for doc in docs:
-            current = current_version(doc)
-            if current is None:
-                continue
-            if db.scalar(select(ApprovalRun.id).where(ApprovalRun.document_version_id == current.id,
-                                                      ApprovalRun.status == "pending").limit(1)):
+            current = currents[doc.id]
+            if current is not None and current.id in pending_runs:
                 pending_ids.add(doc.id)
         folder_summary = completion_summary({**report, "rows": rows, "counts": {
             k: sum(r["status"] == k for r in rows) for k in report["counts"]}, "partial_visibility": False,
             "configured": bool(rows)})
         folders.append({"slug": folder.slug, "label": FOLDER_LABELS[folder.slug], "can_read": True,
                         "can_write": permitted(user, "document.write", folder.slug),
-                        "documents": len(docs), "completion": folder_summary,
+                        "documents": sum(currents[doc.id] is not None for doc in docs), "completion": folder_summary,
                         "pending_validation": len(pending_ids),
                         "alerts": sum(rule.target_folder == folder.slug for _, rule in impacts)
                                   + sum(folder.slug in r["folders"] for r in concerns),
@@ -151,21 +167,38 @@ def _extra_actions(db, user, launches):
             items.append(action(launch, "quality:" + row["rule_id"], "Incohérence : " + row["name"],
                                 row["reason"], "quality", pair.get("folder", row["folders"][0]),
                                 pair.get("document_id"), pair.get("version_id")))
-        for folder in launch.folders:
-            if not permitted(user, "document.read", folder.slug):
+        # Documents, versions, circuits et décisions lus en quelques requêtes pour toute la commande.
+        from sqlalchemy.orm import selectinload
+        from .workflow_models import DocumentReview
+        readable = [f for f in launch.folders if permitted(user, "document.read", f.slug)]
+        docs = db.scalars(select(Document).options(selectinload(Document.versions)).where(
+            Document.folder_id.in_([f.id for f in readable]))).all() if readable else []
+        currents = {doc.id: current_version(doc) for doc in docs}
+        ids = [v.id for v in currents.values() if v is not None]
+        runs, reviews = {}, {}
+        if ids:
+            for run in db.scalars(select(ApprovalRun).where(ApprovalRun.document_version_id.in_(ids)).order_by(ApprovalRun.started_at)):
+                runs.setdefault(run.document_version_id, []).append(run)           # ordre chronologique
+            for review in db.scalars(select(DocumentReview).where(DocumentReview.document_version_id.in_(ids))
+                                     .order_by(DocumentReview.reviewed_at, DocumentReview.id)):
+                reviews[review.document_version_id] = review                        # la plus récente l'emporte
+        slugs = {f.id: f.slug for f in readable}
+        for doc in docs:
+            folder_slug = slugs[doc.folder_id]
+            current = currents[doc.id]
+            if current is None:
                 continue
-            for doc in folder.documents:
-                current = current_version(doc)
-                if current is None:
-                    continue
-                pending_run = db.scalar(select(ApprovalRun).where(ApprovalRun.document_version_id == current.id,
-                        ApprovalRun.status == "pending").limit(1))
-                if pending_run:
-                    items.append(action(launch, "approval:" + pending_run.id, "Circuit à valider : " + doc.title,
-                                        "Étape de validation en attente", "approvals", folder.slug, doc.id, current.id))
-                if document_state(db, doc) in {"rejected", "changes_requested"}:
-                    items.append(action(launch, "correction:" + doc.id, "Document à corriger : " + doc.title,
-                                        "Décision sur la version courante", "workflow", folder.slug, doc.id, current.id))
+            version_runs = runs.get(current.id, [])
+            pending_run = next((run for run in version_runs if run.status == "pending"), None)
+            if pending_run:
+                items.append(action(launch, "approval:" + pending_run.id, "Circuit à valider : " + doc.title,
+                                    "Étape de validation en attente", "approvals", folder_slug, doc.id, current.id))
+            last_run = version_runs[-1] if version_runs else None
+            state = ({"approved": "approved", "rejected": "rejected", "changes_requested": "changes_requested"}.get(last_run.status, "to_review")
+                     if last_run else (reviews[current.id].decision if current.id in reviews else "to_review"))
+            if state in {"rejected", "changes_requested"}:
+                items.append(action(launch, "correction:" + doc.id, "Document à corriger : " + doc.title,
+                                    "Décision sur la version courante", "workflow", folder_slug, doc.id, current.id))
         for row in list_excel_inspections(launch.id, user, db):
             inspection = row["inspection"]
             if inspection and any(f["type"] != "inspection_limit" for f in inspection["findings"]):
@@ -238,7 +271,14 @@ def history_details(event, doc, version, detail):
 
 
 def activity(db, user, *, launch_id=None, document_id=None, actor_id=None, action_filter=None,
-             date_from=None, date_to=None, limit=100, offset=0, include_global=False):
+             date_from=None, date_to=None, limit=100, offset=0, include_global=False, exact_total=None):
+    """Événements visibles, du plus récent au plus ancien.
+
+    Avec un filtre de commande ou de document, le préfiltre SQL rend le parcours court : le total est
+    exact. Sans ce filtre (historique global, tableau de bord), le parcours s'arrête dès que la page
+    demandée est remplie : `total` vaut alors None et `has_more` indique s'il reste des événements."""
+    if exact_total is None:
+        exact_total = bool(launch_id or document_id)
     from .main import is_admin, permitted
     query = select(AuditEvent).order_by(AuditEvent.occurred_at.desc(), AuditEvent.id.desc())
     if actor_id:
@@ -269,7 +309,10 @@ def activity(db, user, *, launch_id=None, document_id=None, actor_id=None, actio
         clauses += [AuditEvent.target_id.in_(ids[i:i + 500]) for i in range(0, len(ids), 500)]
         query = query.where(or_(*clauses))
     output = []
-    for event in db.scalars(query):
+    stop_at = None if exact_total else offset + limit + 1
+    for event in db.scalars(query.execution_options(yield_per=200)):
+        if stop_at is not None and len(output) >= stop_at:
+            break
         launch, doc, version, detail = resolve_event(db, event)
         if not launch:
             if not (include_global and is_admin(user)) or launch_id or document_id:
@@ -302,4 +345,6 @@ def activity(db, user, *, launch_id=None, document_id=None, actor_id=None, actio
                        "document_id": doc.id if doc else None, "document_title": doc.title if doc else None,
                        "folder": doc.folder.slug if doc else (detail.get("folder") if event.target_type == "optional_document_case" else None),
                        "version_id": version.id if version else None, "occurred_at": event.occurred_at.isoformat()})
-    return {"total": len(output), "items": output[offset:offset + limit], "limit": limit, "offset": offset}
+    complete = stop_at is None or len(output) < stop_at
+    return {"total": len(output) if complete else None, "has_more": len(output) > offset + limit,
+            "items": output[offset:offset + limit], "limit": limit, "offset": offset}
