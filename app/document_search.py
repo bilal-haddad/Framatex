@@ -60,7 +60,7 @@ def search_content(db, query: str, limit: int = 500) -> dict[str, str]:
             FROM document_search_index WHERE search_vector @@ to_tsquery('simple', framatex_unaccent(:query))
             LIMIT :limit'''), {'query': expression, 'limit': limit}).all()
         return {version_id: excerpt for version_id, excerpt in rows}
-    expression = ' AND '.join('"' + token.replace('"', '""') + '"' for token in tokens)
+    expression = ' AND '.join('"' + token.replace('"', '""') + '"*' for token in tokens)   # préfixes, comme PostgreSQL
     rows = db.execute(text('''SELECT version_id,
         snippet(document_content_fts, 1, '[', ']', ' … ', 18) AS excerpt
         FROM document_content_fts WHERE document_content_fts MATCH :query LIMIT :limit'''),

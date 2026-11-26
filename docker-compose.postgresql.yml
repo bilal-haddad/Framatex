@@ -1,0 +1,28 @@
+# PostgreSQL local pour FRAMATEX (poste Windows avec Docker Desktop, ou Linux).
+# Valeurs lues dans .env (copier .env.example) ; aucun mot de passe dans ce fichier.
+#   docker compose -f docker-compose.postgresql.yml --env-file .env up -d
+# Le port n'est publié que sur la machine locale (127.0.0.1). Les données sont conservées dans le
+# volume « framatex_pgdata » (arrêter ou recréer le conteneur ne les efface pas).
+name: framatex
+services:
+  postgres:
+    image: postgres:16.6-bookworm
+    container_name: framatex-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${FRAMATEX_PG_DATABASE:-framatex}
+      POSTGRES_USER: ${FRAMATEX_PG_USER:-framatex}
+      POSTGRES_PASSWORD: ${FRAMATEX_PG_PASSWORD:?Definir FRAMATEX_PG_PASSWORD dans .env}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8 --data-checksums"
+    ports:
+      - "127.0.0.1:${FRAMATEX_PG_PORT:-5432}:5432"
+    volumes:
+      - framatex_pgdata:/var/lib/postgresql/data
+    command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=256MB", "-c", "log_min_duration_statement=1000"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+volumes:
+  framatex_pgdata:

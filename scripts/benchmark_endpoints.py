@@ -100,7 +100,9 @@ def main():
     data_dir = args.data_dir or Path(tempfile.mkdtemp(prefix='framat-bench-'))
     fresh = not (data_dir / 'framat.db').exists()
     os.environ.update(FRAMATEX_DATA_DIR=str(data_dir), FRAMATEX_SECRET_KEY=os.getenv('FRAMATEX_SECRET_KEY') or secrets.token_urlsafe(32))
-    os.environ.pop('DATABASE_URL', None)
+    # Base : DATABASE_URL si elle désigne PostgreSQL (base dédiée et vide), sinon SQLite temporaire.
+    if not os.getenv('DATABASE_URL', '').startswith(('postgresql', 'postgres')):
+        os.environ.pop('DATABASE_URL', None)
     from app.core import SessionLocal, hash_password
     from app.migrate import migrate
     from app.models import Role, User
