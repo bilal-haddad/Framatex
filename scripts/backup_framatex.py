@@ -104,6 +104,8 @@ def verify(archive: Path, target: Path | None = None) -> dict:
                 if not path.is_file() or sha256(path) != digest:
                     missing += 1
             report["versions_checked"] = db.execute("SELECT COUNT(*) FROM document_versions").fetchone()[0]
+            # Préalable à l'activation de PRAGMA foreign_keys : lignes orphelines (signalées, non bloquantes).
+            report["foreign_key_violations"] = len(db.execute("PRAGMA foreign_key_check").fetchall())
             if missing:
                 report["errors"].append(f"{missing} version(s) documentaire(s) sans fichier conforme")
         report.update(schema_revision=manifest["schema_revision"], counts=manifest["counts"], files=len(manifest["files"]))

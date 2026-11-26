@@ -188,7 +188,16 @@ def run(base, pw, out, storage):
         page.check('#trash-clearance-confirm'); page.click('#trash-clearance-form [type=submit]')
         expect(page.locator('#trash-purge-form')).to_be_visible()
         page.locator('#cancel-modal').click()
+        # Mobile (390 px) : corbeille et fenêtre de destruction sans débordement horizontal.
+        page.set_viewport_size({'width': 390, 'height': 844})
+        trash_row(f'Facture {tag}').locator('[data-trash-purge]').click()
+        expect(page.locator('#trash-purge-form')).to_be_visible()
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'débordement horizontal à 390 px'
+        page.screenshot(path=str(out / '03-mobile-destruction.png'), animations='disabled')
+        page.locator('#cancel-modal').click()
+        page.set_viewport_size({'width': 1440, 'height': 900})
         purge_from_trash(f'Facture {tag}')
+        checks.append('Mobile 390 px : corbeille et confirmation sans débordement')
         checks.append('Facture : destruction refusée tant que la conservation n’est pas vérifiée ; vérification motivée puis destruction')
         page.click('#logout')
 

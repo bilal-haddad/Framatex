@@ -370,6 +370,13 @@ def run(base, pw, out, restart):
         assert page.locator('h1').inner_text() in ('Sous-dossier jaune', 'Sous-dossier bleu')
         page.screenshot(path=str(out / '04-mes-sous-dossiers.png'), animations='disabled')
         checks.append('Mes sous-dossiers : recherche par couleur, ouverture d’un sous-dossier réellement accessible')
+        page.set_viewport_size({'width': 390, 'height': 844})
+        page.wait_for_timeout(300)
+        expect(page.locator('#ops-launch-summary')).to_be_visible()               # sous-dossier ouvert depuis la recherche
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'débordement horizontal à 390 px (sous-dossier, documents complémentaires)'
+        page.screenshot(path=str(out / '06-mobile-recherche.png'), animations='disabled')
+        page.set_viewport_size({'width': 1440, 'height': 900})
+        checks.append('Mobile 390 px : sous-dossier ouvert depuis la recherche (checklist, documents complémentaires) sans débordement horizontal')
         assert page.context.request.get(f"/api/launches/{secret['id']}").status in (403, 404)
         checks.append('Commande non attribuée : refusée par l’API (aucun contournement par l’URL)')
 

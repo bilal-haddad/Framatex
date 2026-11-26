@@ -151,3 +151,17 @@ def test_supervision_and_hardening():
                          'exp': datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)}, SECRET_KEY, algorithm='HS256')
     other = TestClient(app); other.cookies.set('framat_session', forged)
     assert other.get('/api/auth/me').status_code == 401
+
+
+def test_business_api_rate_limit_is_configurable(monkeypatch):
+    from app import observability
+    c = chef()
+    monkeypatch.setenv('FRAMATEX_API_BURST', '5'); monkeypatch.setenv('FRAMATEX_API_RATE_PER_SECOND', '0.5')
+    observability._buckets.clear()
+    statuses = [c.get('/api/auth/me').status_code for _ in range(8)]
+    assert statuses[:5] == [200] * 5 and 429 in statuses[5:]
+    limited = c.get('/api/auth/me')
+    assert limited.status_code == 429 and int(limited.headers['Retry-After']) >= 1
+    assert c.get('/api/health').status_code == 200                                 # santé jamais limitée
+    monkeypatch.setenv('FRAMATEX_API_BURST', '0'); observability._buckets.clear()
+    assert all(c.get('/api/auth/me').status_code == 200 for _ in range(10))        # 0 : désactivé

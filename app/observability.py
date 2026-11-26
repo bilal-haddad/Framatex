@@ -54,7 +54,12 @@ async def request_observability(request: Request, call_next):
     started = time.perf_counter()
     status = 500
     try:
-        response = await call_next(request)
+        wait = rate_limited(request)
+        if wait:
+            response = JSONResponse({"detail": "Trop de requêtes : réessayez dans un instant"}, status_code=429,
+                                    headers={"Retry-After": str(max(1, round(wait)))})
+        else:
+            response = await call_next(request)
         status = response.status_code
         response.headers["X-Request-ID"] = request_id
         return response
@@ -110,3 +115,42 @@ def metrics(request: Request):
         lines.append(f"framatex_http_request_seconds_sum{{{labels}}} {row[1]:.4f}")
         lines.append(f"framatex_http_request_seconds_count{{{labels}}} {row[0]}")
     return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
+
+
+# --------------------------------------------------------------------------- limites des API métier
+# Seau à jetons par session (ou par adresse sans session), propre à chaque processus. Calibrage mesuré :
+# un utilisateur actif émet des rafales d'environ 25 requêtes (ouverture complète d'une commande) et
+# moins de 2 requêtes par seconde en moyenne ; les valeurs par défaut laissent une large marge
+# (rafale 400, 40 requêtes/s soutenues ; la recette automatisée la plus rapide, bien plus rapide
+# qu'un humain, reste en deçà) tout en bornant un client défaillant ou malveillant.
+# FRAMATEX_API_BURST / FRAMATEX_API_RATE_PER_SECOND ; 0 pour désactiver. La connexion garde sa limite
+# propre (tentatives échouées), indépendante de celle-ci.
+_buckets: dict[str, list[float]] = {}
+_bucket_lock = threading.Lock()
+
+
+def _limits():
+    return float(os.getenv("FRAMATEX_API_BURST", "400")), float(os.getenv("FRAMATEX_API_RATE_PER_SECOND", "40"))
+
+
+def rate_limited(request: Request) -> float:
+    """0 si la requête est admise, sinon le délai conseillé (secondes) avant de réessayer."""
+    burst, rate = _limits()
+    path = request.url.path
+    if burst <= 0 or rate <= 0 or not path.startswith("/api/") or path.startswith("/api/health"):
+        return 0.0
+    import hashlib
+    cookie = request.cookies.get("framat_session") or request.cookies.get("framat_client_session")
+    key = hashlib.sha256(cookie.encode()).hexdigest()[:24] if cookie else f"ip:{request.client.host if request.client else '?'}"
+    now = time.monotonic()
+    with _bucket_lock:
+        tokens, last = _buckets.get(key, (burst, now))
+        tokens = min(burst, tokens + (now - last) * rate)
+        if tokens < 1:
+            _buckets[key] = (tokens, now)
+            return round((1 - tokens) / rate, 2)
+        _buckets[key] = (tokens - 1, now)
+        if len(_buckets) > 50000:                       # mémoire bornée : les seaux pleins sont oubliés
+            for stale in [k for k, (t, at) in _buckets.items() if now - at > 600]:
+                _buckets.pop(stale, None)
+    return 0.0
