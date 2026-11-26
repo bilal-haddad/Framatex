@@ -12,7 +12,7 @@ const BASE = '/api/client';
 
 // Erreur normalisée consommée par l'interface (client.js traduit `code` en message).
 // Codes : unauthenticated, invalid_credentials, inactive, forbidden, not_found, conflict,
-// too_large, rejected (refus métier explicite du serveur), validation, rate_limited, network, server.
+// too_large, rejected (refus métier explicite du serveur), validation, rate_limited, network, timeout, server.
 export class ClientApiError extends Error {
   constructor(code, { status = 0, fields = null, message = '' } = {}) {
     super(message || code);
@@ -55,7 +55,9 @@ function toError(status, data, context) {
 
 async function call(path, { method = 'GET', json, context = '' } = {}) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
+  // Lecture 20 s ; écriture 60 s : une opération lente n'est pas abandonnée (puis rejouée) trop tôt.
+  let expired = false;
+  const timer = setTimeout(() => { expired = true; controller.abort(); }, method === 'GET' ? 20000 : 60000);
   const headers = {};
   if (method !== 'GET') headers['X-Framatex-Request'] = '1';
   if (json !== undefined) headers['Content-Type'] = 'application/json';
@@ -69,7 +71,10 @@ async function call(path, { method = 'GET', json, context = '' } = {}) {
     return data;
   } catch (err) {
     if (err instanceof ClientApiError) throw err;
-    throw new ClientApiError('network');
+    if (expired) throw new ClientApiError('timeout', { status: method === 'GET' ? 0 : -1 });
+    if (err?.name === 'AbortError' || err instanceof TypeError) throw new ClientApiError('network');
+    console.error('Réponse inattendue du serveur', err);       // erreur réelle conservée, non déguisée en panne réseau
+    throw new ClientApiError('server');
   } finally {
     clearTimeout(timer);
   }

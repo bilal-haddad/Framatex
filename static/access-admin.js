@@ -100,7 +100,7 @@ function accPasswordScreen() {
       <div class="field"><label for="acc-confirm">Confirmer le nouveau mot de passe</label><input id="acc-confirm" type="password" autocomplete="new-password" minlength="12" required></div>
       <button class="primary" type="submit">Enregistrer et continuer ${icon('arrow')}</button>
       <button class="link" type="button" id="acc-password-logout">Se déconnecter</button></form></section></div>`;
-  app.querySelector('#acc-password-logout').onclick = async () => { try { await api('/api/auth/logout', {method: 'POST'}); } catch {} state.me = null; renderLogin(); };
+  app.querySelector('#acc-password-logout').onclick = async () => { fxAbortPending(); try { await api('/api/auth/logout', {method: 'POST'}); } catch {} state.me = null; renderLogin(); };
   app.querySelector('#acc-password-form').addEventListener('submit', async event => {
     event.preventDefault();
     const error = app.querySelector('#acc-password-error');
@@ -369,6 +369,8 @@ async function accLaunchMatrix(launchId) {
       const save = async () => {
         await api(`/api/admin/launches/${launchId}/assignments`, {method: 'PUT', body: JSON.stringify({assignments: changed.map(p => ({user_id: p.id, folders: p.folders}))})});
         closeModal(); toast(changed.length ? `Affectations enregistrées pour ${changed.length} collaborateur${changed.length > 1 ? 's' : ''}.` : 'Aucun changement.');
+        // Habilitations modifiées : la commande affichée est relue (droits, accès, compteurs).
+        if (changed.length && state.view === 'detail' && state.detail?.id === launchId) await openLaunch(launchId, null, {keep: true});
       };
       if (removedCells()) return accConfirm('Retirer des accès ?', 'Les accès retirés seront refusés dès la prochaine requête, y compris pour une session déjà ouverte.', save);
       try { await save(); } catch (error) { showErr(error); }

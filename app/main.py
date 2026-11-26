@@ -170,7 +170,8 @@ def version_out(v: DocumentVersion):
 
 def doc_out(d: Document):
     versions = sorted((v for v in d.versions if v.deleted_at is None), key=lambda v: v.number)
-    return {"id": d.id, "title": d.title, "doc_type": d.doc_type, "folder": d.folder.slug, "created_at": d.created_at.isoformat(), "versions": [version_out(v) for v in versions], "latest": version_out(versions[-1]) if versions else None}
+    outs = [version_out(v) for v in versions]          # « latest » = même entrée que dans « versions » (droits compris)
+    return {"id": d.id, "title": d.title, "doc_type": d.doc_type, "folder": d.folder.slug, "created_at": d.created_at.isoformat(), "versions": outs, "latest": outs[-1] if outs else None}
 
 
 class LoginPayload(BaseModel):

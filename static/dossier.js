@@ -96,27 +96,83 @@ async function djLoadExtras(id) {
 }
 
 const djOriginalOpenLaunch = openLaunch;
+// Ouverture et actualisation d'une commande. Le serveur fait foi : tout est rechargé, puis appliqué
+// d'un seul bloc (fiche, checklist, compteurs, doublons, alertes, historique). Pendant une
+// actualisation, l'écran reste utilisable avec les données précédentes ; si l'utilisateur a changé
+// de sous-dossier ou d'onglet entre-temps, son choix est conservé ; une réponse plus ancienne
+// qu'une autre ouverture est ignorée.
 openLaunch = async function(id, folder = null, target = null) {
-  const sameDossier = state.detail?.id === id;
+  // Même commande déjà affichée (écran de la commande, pas son tableau de bord) : actualisation.
+  const sameDossier = state.view === 'detail' && state.detail?.id === id && Boolean(app.querySelector('.dj:not(.dj-dash) #ops-launch-summary'));
+  const requestedFolder = state.folder;
+  const intent = fxIntent;
   const loadToken = Symbol();
   state.djLoadToken = loadToken;
-  state.djSuspend = true;
-  let extras;
+  if (!sameDossier) state.djSuspend = true;
+  document.body?.setAttribute('aria-busy', 'true');
+  let fresh, extras;
   try {
-    [, extras] = await Promise.all([djOriginalOpenLaunch(id, folder, loadToken), djLoadExtras(id)]);
+    [fresh, extras] = await Promise.all([djOriginalOpenLaunch(id, folder, loadToken), djLoadExtras(id)]);
   } finally {
-    if (state.djLoadToken === loadToken) state.djSuspend = false;
+    if (state.djLoadToken === loadToken) { state.djSuspend = false; document.body?.removeAttribute('aria-busy'); }
   }
-  if (state.djLoadToken !== loadToken) return;
-  Object.assign(state, extras);
-  state.launchLoadWarnings = [...(state.launchLoadWarnings || []), ...(extras.djLoadWarnings || [])];
+  if (state.djLoadToken !== loadToken || !fresh) return;
+  // Actualisation de la commande affichée (après une opération, au retour sur l'onglet) : l'écran
+  // reste où il est. Une navigation de l'utilisateur pendant le chargement prime toujours.
+  const userMoved = sameDossier && fxIntent !== intent && state.view === 'detail';
+  const inPlace = sameDossier && !(target && !target.keep) && (!folder || folder === requestedFolder);
+  const userFolder = state.folder;
+  Object.assign(state, fresh, extras);
+  state.launchLoadWarnings = [...(fresh.launchLoadWarnings || []), ...(extras.djLoadWarnings || [])];
   if (!sameDossier) state.dj = djInitialUi();
-  state.dj.folderView = Boolean(folder);
-  if (!folder) state.dj.tab = 'documents';
-  state.dj.highlight = null;
-  if (target) djApplyTarget(target);
+  if (userMoved || inPlace) {
+    if (fresh.detail.folders.some(f => f.slug === userFolder && f.can_read)) state.folder = userFolder;
+  } else {
+    state.dj.folderView = Boolean(folder);
+    if (!folder) state.dj.tab = 'documents';
+    state.dj.highlight = null;
+    if (target && !target.keep) djApplyTarget(target);
+  }
   renderDetail();
+  djRefreshOpenDocument();
+  if (state.launchLoadWarnings.length && !inPlace) toast(`Commande ouverte · ${state.launchLoadWarnings.length} module(s) secondaire(s) indisponible(s)`);
 };
+
+// Fiche document ouverte pendant une actualisation : elle est redessinée avec les données à jour
+// (nouvelle version, suppression), sauf si l'utilisateur est en train d'y saisir quelque chose.
+function djRefreshOpenDocument() {
+  const open = overlay.querySelector('.modal[data-doc-id]');
+  if (!open) return;
+  const fields = [...open.querySelectorAll('textarea, input[type=text], input:not([type])')];
+  if (open.querySelector('textarea:focus, input:focus, select:focus') || fields.some(field => field.value.trim())) return;
+  const {docId, versionId} = open.dataset;
+  const doc = findDoc(docId);
+  if (!doc) { closeModal(); toast('Ce document a été supprimé entre-temps.'); return; }
+  operationsDocument(docId, doc.versions.some(v => v.id === versionId) ? versionId : null).catch(showErr);
+}
+const djBaseDocument = operationsDocument;
+operationsDocument = async function(id, versionId = null) {
+  await djBaseDocument(id, versionId);
+  const box = overlay.querySelector('.modal');
+  if (box && overlay.querySelector('#ops-version-diff, [data-ops-version]')) { box.dataset.docId = id; box.dataset.versionId = versionId || ''; }
+};
+
+// Retour sur l'onglet après au moins 15 s : la commande affichée est relue (sans changer d'écran,
+// jamais par-dessus une fenêtre ouverte ni pendant une autre actualisation).
+let djHiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { djHiddenAt = Date.now(); return; }
+  const away = djHiddenAt ? Date.now() - djHiddenAt : 0;
+  djHiddenAt = 0;
+  if (away >= 15000) djRefreshInPlace('retour sur l’onglet');
+});
+function djRefreshInPlace(reason) {
+  if (state.view !== 'detail' || !state.detail || overlay.querySelector('.modal') || document.body.getAttribute('aria-busy') === 'true') return null;
+  return openLaunch(state.detail.id, null, {keep: true}).catch(error => {
+    console.error(`Actualisation impossible (${reason})`, error);
+    toast(`Actualisation impossible : ${error.message}`);
+  });
+}
 
 function djApplyTarget(target) {
   if (target.folder) state.folder = target.folder;

@@ -161,7 +161,9 @@ def publish_document(launch_id: str, upload_id: str, payload: PublishUpload,
     if payload.relationship_action == 'new_version':
         chosen_document_id = selected['candidate_document_id']
     elif payload.relationship_action in {'new_document', 'keep_duplicate'}:
-        chosen_document_id = None
+        # Ne pas rattacher au document proposé : nouvelle version du document explicitement
+        # choisi (« Déposer une nouvelle version »), sinon nouveau document.
+        chosen_document_id = payload.document_id
     document = db.get(Document, chosen_document_id) if chosen_document_id else None
     if chosen_document_id and (not document or document.folder_id != entity.id or document.doc_type != doc_type):
         raise HTTPException(404, 'Document introuvable pour ce type et ce sous-dossier')

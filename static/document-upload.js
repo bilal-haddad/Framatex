@@ -149,8 +149,10 @@ async function documentUploadDialog(options) {
     const selectedRelation = value => relationshipChoice === value ? ' selected' : '';
     const relationChoices = related ? [
       (related.kind === 'new_version' || options.document?.id === related.candidate_document_id) && related.can_add_version ? `<option value="new_version"${selectedRelation('new_version')}>Ajouter comme nouvelle version du document proposé</option>` : '',
-      `<option value="new_document"${selectedRelation('new_document')}>Conserver comme nouveau document indépendant</option>`,
-      `<option value="keep_duplicate"${selectedRelation('keep_duplicate')}>Conserver malgré le rapprochement signalé</option>`,
+      options.document && related.candidate_document_id !== options.document.id
+        ? `<option value="new_document"${selectedRelation('new_document')}>Ajouter comme nouvelle version de « ${e(options.document.title)} », sans rattachement</option>`
+        : `<option value="new_document"${selectedRelation('new_document')}>Conserver comme nouveau document indépendant</option>`,
+      `<option value="keep_duplicate"${selectedRelation('keep_duplicate')}>${options.document && related.candidate_document_id !== options.document.id ? `Ajouter à « ${e(options.document.title)} » en conservant le rapprochement signalé` : 'Conserver malgré le rapprochement signalé'}</option>`,
     ].filter(Boolean).join('') : '';
     get('#ops-analysis').innerHTML = `<section class="du-analysis ${conflict ? 'is-conflict' : ''}">
       <strong>${e(message)}</strong>
@@ -315,9 +317,12 @@ async function documentUploadDialog(options) {
       defaultDestination();
       if (queue.length === 1) {
         saving = false;
+        const intent = fxIntent;
         await finishDialog();
         toast(`Document déposé · V${accepted.latest.number}`);
-        if (options.document) await operationsDocument(accepted.id, accepted.latest.id);
+        // Réouverture de la fiche sur la nouvelle version, sauf si l'utilisateur a entre-temps
+        // ouvert autre chose : une suite plus ancienne n'écrase pas son action.
+        if (options.document && fxIntent === intent && !overlay.querySelector('.modal')) await operationsDocument(accepted.id, accepted.latest.id);
       } else {
         await refreshDocuments();
         processNext();

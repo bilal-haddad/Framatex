@@ -12,9 +12,16 @@ const assert = require('assert/strict');
   const source = fs.readFileSync('static/app.js', 'utf8');
   vm.runInContext(source.substring(0, source.lastIndexOf('(async function init(){')), ctx);
   const hung = vm.runInContext("api('/api/auth/me')", ctx);
-  assert.equal(deadline.ms, 8000);
+  assert.equal(deadline.ms, 20000);                       // lecture bornée
   deadline.fn();
-  await assert.rejects(hung, error => error.unavailable && error.message.includes('Impossible de joindre'));
+  await assert.rejects(hung, error => error.unavailable && error.timeout && error.message.includes('n’a pas répondu en 20 s'));
+  const write = vm.runInContext("api('/api/launches/x/sheet',{method:'PATCH',body:'{}'})", ctx);
+  assert.equal(deadline.ms, 60000);                       // écriture : délai plus long, issue incertaine signalée
+  deadline.fn();
+  await assert.rejects(write, error => error.timeout && error.message.includes('peut-être été enregistrée'));
+  ctx.fetch = () => Promise.reject(new TypeError('Failed to fetch'));
+  await assert.rejects(vm.runInContext("api('/api/auth/me')", ctx), error => error.unavailable && error.message.includes('Impossible de joindre'));
+  ctx.fetch = (_path, options) => new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
   ctx.fetch = async (_path, options) => ({ok: true, headers: {get: () => 'application/json'},
     json: () => new Promise((_resolve, reject) => {
       if (options.signal.aborted) reject(new DOMException('aborted', 'AbortError'));
@@ -65,8 +72,10 @@ const assert = require('assert/strict');
     global.clearTimeout = () => {};
     global.fetch = (_url, opts) => new Promise((_resolve, reject) => opts.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
     const request = client.getCurrentClient();
-    assert.equal(deadline.ms, 8000); deadline.fn();
-    await assert.rejects(request, error => error.code === 'network');
+    assert.equal(deadline.ms, 20000); deadline.fn();
+    await assert.rejects(request, error => error.code === 'timeout');
+    global.fetch = () => Promise.reject(new TypeError('Failed to fetch'));
+    await assert.rejects(client.getCurrentClient(), error => error.code === 'network');
   } finally { global.fetch = oldFetch; global.setTimeout = oldSet; global.clearTimeout = oldClear; }
   console.log('Runtime frontend : fetch et corps bloqués bornés, garde autonome, Réessayer, Client timeout OK');
   clearTimeout(watchdog);

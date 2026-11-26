@@ -460,6 +460,7 @@ function fxForgetSession() {
 // « Quitter l'espace et retourner à l'accueil » : la session est révoquée côté serveur
 // (jti enregistré, cookie supprimé) AVANT la redirection ; sinon l'utilisateur reste ici.
 async function fxExitSpace(button) {
+  fxAbortPending();
   const html = button.innerHTML;
   button.disabled = true;
   button.innerHTML = `${fxIcon('loader', 'fx-ico fx-spin')}<span>Déconnexion…</span>`;

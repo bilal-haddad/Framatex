@@ -43,6 +43,7 @@ function messageFor(err, context = '') {
     case 'unsupported_type': return `Format non accepté. Formats autorisés : ${UPLOAD.label}.`;
     case 'validation': return 'Certaines informations sont invalides. Vérifiez le formulaire.';
     case 'network': return 'Connexion au serveur impossible. Vérifiez votre connexion internet.';
+    case 'timeout': return err.status === -1 ? 'Le serveur n’a pas confirmé l’opération à temps : elle a peut-être été enregistrée. Actualisez la liste avant de recommencer.' : 'Le serveur met trop de temps à répondre. Réessayez dans un instant.';
     default: return 'Une erreur est survenue. Veuillez réessayer dans quelques instants.';
   }
 }

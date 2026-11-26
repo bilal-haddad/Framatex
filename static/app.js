@@ -31,9 +31,16 @@ function niceDate(s){if(!s)return '—';const d=new Date(s.endsWith('Z')?s:s+'Z'
 function sizeText(n){return n>=1024*1024?`${(n/1024/1024).toFixed(1)} Mo`:`${Math.max(1,Math.ceil(n/1024))} Ko`}
 const app=document.querySelector('#app'), overlay=document.querySelector('#overlay-root');
 const state={me:null,view:'home',priorities:null,launches:[],dashboard:null,detail:null,completeness:null,completionProfiles:[],completenessPhases:[{code:'preparation',label:'Préparation'},{code:'approvisionnement',label:'Approvisionnement'},{code:'fabrication',label:'Fabrication'},{code:'expedition',label:'Expédition'},{code:'cloture',label:'Clôture'}],folder:'jaune',roles:[],users:[],audit:[],workflowReviews:[],workflowValues:[],workflowImpacts:[],workflowFields:[],workflowRules:[],qualityReport:null,excelInspections:[],specReport:null,mailReport:null,simGraph:null,simHistory:[],orliReconciliation:null,orliBatches:[],materials:null,approvalOverview:null,clientPublications:null,supplierRequests:null,approvalTemplates:[],approvalRoles:[],notifications:null,launchLoadWarnings:[],query:''};
+const fxPending=new Set();
+// Déconnexion : les requêtes encore en cours sont annulées, leurs suites ignorées sans message.
+function fxAbortPending(){for(const c of fxPending)c.abort('logout');fxPending.clear()}
 async function api(path,options={}){
-  const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),options.body instanceof FormData?60000:8000);
+  const controller=new AbortController();fxPending.add(controller);
+  const method=(options.method||'GET').toUpperCase();
+  // Délais : lecture 20 s ; écriture 60 s (une écriture lente n'est pas abandonnée trop tôt) ; fichiers 120 s.
+  const limit=options.body instanceof FormData?120000:method==='GET'?20000:60000;
+  let expired=false;
+  const timer=setTimeout(()=>{expired=true;controller.abort()},limit);
   try{
   const headers={'X-Framatex-Request':'1',...options.headers};
   if(options.body && !(options.body instanceof FormData))headers['Content-Type']='application/json';
@@ -43,11 +50,19 @@ async function api(path,options={}){
   // 204/205 (et corps vide) : aucune donnée à lire, même si l'en-tête annonce du JSON.
   if(res.status===204||res.status===205)return null;
   if(res.headers.get('content-type')?.includes('application/json')){if(typeof res.text!=='function')return await res.json();const text=await res.text();return text?JSON.parse(text):null}return res;
-  }catch(err){if(err.name==='AbortError'||err instanceof TypeError){const unavailable=new Error('Impossible de joindre le serveur FRAMATEX. Réessayez.');unavailable.unavailable=true;throw unavailable}throw err}
-  finally{clearTimeout(timer)}
+  }catch(err){
+    if(controller.signal.reason==='logout'){const cancelled=new Error('Session fermée');cancelled.cancelled=true;throw cancelled}
+    if(err.name==='AbortError'&&expired){const late=new Error(method==='GET'?`Le serveur FRAMATEX n’a pas répondu en ${limit/1000} s. Réessayez.`:`Le serveur FRAMATEX n’a pas confirmé l’opération en ${limit/1000} s : elle a peut-être été enregistrée. Vérifiez avant de recommencer.`);late.unavailable=true;late.timeout=true;throw late}
+    if(err.name==='AbortError'||err instanceof TypeError){const unavailable=new Error('Impossible de joindre le serveur FRAMATEX. Réessayez.');unavailable.unavailable=true;throw unavailable}throw err}
+  finally{clearTimeout(timer);fxPending.delete(controller)}
 }
+// Gestes réels de l'utilisateur (clic sur un contrôle, Entrée, Échap) : une suite asynchrone plus
+// ancienne (actualisation, réouverture d'une fenêtre) ne doit jamais annuler une action plus récente.
+let fxIntent=0;
+document.addEventListener?.('click',event=>{if(event.isTrusted&&event.target.closest?.('button,a,[role=tab],summary,select,input,label,[data-ops-target],[data-launch]'))fxIntent++},true);
+document.addEventListener?.('keydown',event=>{if(event.isTrusted&&(event.key==='Enter'||event.key==='Escape'))fxIntent++},true);
 let timeout;function toast(msg){const el=document.querySelector('#toast');el.textContent=msg;el.classList.add('visible');clearTimeout(timeout);timeout=setTimeout(()=>el.classList.remove('visible'),3400)}
-function showErr(err){toast(err.message||String(err))}
+function showErr(err){if(err?.cancelled)return;toast(err.message||String(err))}
 function can(action,folder=null){return !!state.me?.admin||state.me?.permissions?.some(p=>p.action===action&&(folder?p.folder===null||p.folder===folder:p.folder===null))}
 function statusTag(s){return `<span class="tag ${s==='À compléter'?'orange':s==='Clôturé'?'green':s==='En validation'?'blue':''}">${e(s)}</span>`}
 function topbar(label){
@@ -66,7 +81,7 @@ function mount(html,label){
  app.querySelector('#top-notifications')?.addEventListener('click',()=>navigate('notifications'));
  app.querySelector('#top-profile')?.addEventListener('click',()=>app.querySelector('.sidebar-bottom')?.scrollIntoView({behavior:'smooth',block:'center'}));
  app.querySelector('#global-search')?.addEventListener('click',async()=>{await navigate('launches');app.querySelector('#launch-search')?.focus()});
- app.querySelector('#logout').addEventListener('click',async()=>{try{await api('/api/auth/logout',{method:'POST'})}catch{}state.me=null;state.detail=null;renderLogin()});
+ app.querySelector('#logout').addEventListener('click',async()=>{fxAbortPending();try{await api('/api/auth/logout',{method:'POST'})}catch{}state.me=null;state.detail=null;renderLogin()});
 }
 function renderLogin(){overlay.innerHTML='';app.innerHTML=`<div class="login-page"><section class="login-art"><a class="brand" href="/" aria-label="FRAMATEX — retour au site"><img class="brand-mark" src="/assets/landing/logo-framatex.jpg" alt="FRAMATEX" width="500" height="500"><span class="brand-text"><span class="brand-label">Espace FRAMATEX</span><span class="brand-sub">Accès collaborateurs</span></span></a><div class="login-hero"><span class="eyebrow">UNE NOUVELLE MANIÈRE DE TRAVAILLER</span><h1>Chaque lancement.<br>Chaque document.<br>Au bon endroit.</h1><p>Un espace structuré pour retrouver les bonnes pièces, suivre leurs versions et préparer les prochains contrôles métier.</p></div><div class="login-caption">Dossier jaune numérique · Commandes, documents et contrôles</div></section><section class="login-form-wrap"><form id="login-form" class="login-form"><div class="page-kicker">ACCÈS SÉCURISÉ</div><h2 style="margin-top:16px">Bienvenue.</h2><p>Connectez-vous à votre espace de travail.</p><div id="login-error"></div><div class="field"><label for="email">Adresse email</label><input id="email" type="email" autocomplete="username" required placeholder="vous@framatex.local" /></div><div class="field"><label for="password">Mot de passe</label><input id="password" type="password" autocomplete="current-password" required placeholder="Votre mot de passe" /></div><button class="primary" type="submit">Se connecter ${icon('arrow')}</button><div class="notice">Accès réservé aux collaborateurs FRAMATEX. Les comptes sont créés et gérés par un administrateur.</div></form></section></div>`;
   app.querySelector('#login-form').addEventListener('submit',async evt=>{evt.preventDefault();const btn=evt.target.querySelector('button');btn.disabled=true;try{state.me=await api('/api/auth/login',{method:'POST',body:JSON.stringify({email:app.querySelector('#email').value,password:app.querySelector('#password').value})});state.me=await api('/api/auth/me');if(!(await paperOpenDeepLink()))await navigate('home')}catch(err){app.querySelector('#login-error').innerHTML=`<div class="error">${e(err.message)}</div>`}finally{btn.disabled=false}})
@@ -138,11 +153,15 @@ async function openLaunch(id,folder=null,loadToken=null){
   optional('publications client',`/api/launches/${enc}/client-publications`,null),
   optional('demandes fournisseur',`/api/launches/${enc}/supplier-requests`,null)
  ]);
- if(loadToken&&state.djLoadToken!==loadToken)return;
+ if(loadToken&&state.djLoadToken!==loadToken)return null;
  const requested=detail.folders.find(item=>item.slug===folder&&item.can_read);
  const selected=requested||detail.folders.find(item=>item.can_read);
  if(!selected){const error=new Error('Aucun sous-dossier autorisé pour cette commande.');error.status=403;throw error}
- Object.assign(state,{clientPublications,supplierRequests,approvalOverview,materials,orliReconciliation,simGraph,simHistory,mailReport:mails,specReport:specs,qualityReport:quality,excelInspections:excels,detail,completeness,workflowReviews:reviews,workflowValues:values,workflowImpacts:impacts,workflowFields:fields,launchLoadWarnings:warnings,view:'detail',folder:selected.slug});
+ const fresh={clientPublications,supplierRequests,approvalOverview,materials,orliReconciliation,simGraph,simHistory,mailReport:mails,specReport:specs,qualityReport:quality,excelInspections:excels,detail,completeness,workflowReviews:reviews,workflowValues:values,workflowImpacts:impacts,workflowFields:fields,launchLoadWarnings:warnings,view:'detail',folder:selected.slug};
+ // Chargement piloté par le Dossier Jaune : l'état est appliqué d'un seul bloc par l'appelant,
+ // avec les modules annexes, pour qu'aucun écran ne mélange données anciennes et récentes.
+ if(loadToken)return fresh;
+ Object.assign(state,fresh);
  renderDetail();
  if(warnings.length)toast(`Commande ouverte · ${warnings.length} module(s) secondaire(s) indisponible(s)`);
 }
