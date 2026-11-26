@@ -672,3 +672,12 @@ body.fx-pro :focus-visible { outline: 2px solid var(--p-cyan); outline-offset: 2
 .fx-pro .hist-doc { margin-top: 18px; } .fx-pro .hist-doc h3 { font-size: 14px; margin: 0 0 6px; }
 .fx-pro .dv-side .hist-row { grid-template-columns: 82px minmax(0, 1fr); } .fx-pro .dv-side .hist-act { grid-column: 2; }
 @media (max-width: 720px) { .fx-pro .hist-row { grid-template-columns: minmax(0, 1fr); } }
+
+/* Actualisation en cours d’une commande : curseur d’attente, sans changement visuel. */
+body[aria-busy="true"] .content { cursor: progress; }
+
+/* Recherche du technicien (Mes commandes, Mes sous-dossiers) : mêmes champs que les filtres existants. */
+.ops-filters.ts-search { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto auto; }
+.ops-filters.ts-search .ts-q { grid-column: auto; }
+.ts-table .acc-folder-chips { margin: 0; }
+@media (max-width: 720px) { .ops-filters.ts-search { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .ops-filters.ts-search .ts-q { grid-column: 1 / -1; } }

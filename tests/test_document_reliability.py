@@ -97,3 +97,86 @@ def test_deleted_version_and_historical_match():
     copy_b = upload(c, lid, 'jaune', 'b.pdf', b)
     assert copy_b['duplicates'] == [] and copy_b['historical_matches'] == []
     assert other['id']
+
+
+def stage(c, lid, folder, name, data):
+    r = c.post(f'/api/launches/{lid}/document-uploads', headers=H, data={'folder': folder}, files={'file': (name, data, 'application/pdf')})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_new_version_of_chosen_document_despite_other_candidate():
+    """« Déposer une nouvelle version » de X : un rapprochement proposé avec Y ne crée pas de document séparé."""
+    c = chef()
+    lid = c.post('/api/order-sheets', headers=H, json={'name': f'Version X {uuid.uuid4().hex[:6]}'}).json()['id']
+    x = upload(c, lid, 'jaune', 'x.pdf', pdf(f'Document X {uuid.uuid4().hex}'))
+    shared = pdf(f'Contenu Y {uuid.uuid4().hex}')
+    y = upload(c, lid, 'jaune', 'y.pdf', shared)
+    staged = stage(c, lid, 'jaune', 'x-v2.pdf', shared)                       # identique à Y
+    related = staged['analysis']['relationships'][0]
+    assert related['candidate_document_id'] == y['id']
+    r = c.post(f"/api/launches/{lid}/document-uploads/{staged['id']}/publish", headers=H, json={
+        'folder': 'jaune', 'doc_type': 'Autre', 'title': 'x.pdf', 'document_id': x['id'], 'confirm_type': True,
+        'relationship_action': 'new_document', 'relationship_candidate_version_id': related['candidate_version_id']})
+    assert r.status_code == 201, r.text
+    assert r.json()['id'] == x['id'] and r.json()['latest']['number'] == 2
+    docs = [d['id'] for f in c.get(f'/api/launches/{lid}').json()['folders'] for d in f['documents']]
+    assert sorted(docs) == sorted([x['id'], y['id']])                           # aucun document créé en plus
+    # Sans document choisi, « nouveau document indépendant » crée bien un nouveau document.
+    staged = stage(c, lid, 'jaune', 'z.pdf', shared)
+    r = c.post(f"/api/launches/{lid}/document-uploads/{staged['id']}/publish", headers=H, json={
+        'folder': 'jaune', 'doc_type': 'Autre', 'title': 'z.pdf', 'confirm_type': True, 'relationship_action': 'new_document',
+        'relationship_candidate_version_id': staged['analysis']['relationships'][0]['candidate_version_id']})
+    assert r.status_code == 201 and r.json()['id'] not in (x['id'], y['id'])
+
+
+def technician(c, assignments):
+    import secrets
+    from fastapi.testclient import TestClient
+    from app.main import app
+    created = c.post('/api/admin/collaborators', headers=H, json={'name': 'Technicien', 'email': f't-{uuid.uuid4().hex[:6]}@example.test'}).json()
+    for lid, folders in assignments.items():
+        r = c.put(f"/api/admin/collaborators/{created['collaborator']['id']}/assignments/{lid}", headers=H, json={'folders': folders})
+        assert r.status_code == 200, r.text
+    t = TestClient(app); pw = secrets.token_urlsafe(16) + 'Aa1!'
+    t.post('/api/auth/login', headers=H, json={'email': created['collaborator']['email'], 'password': created['temporary_password']})
+    t.post('/api/account/password', headers=H, json={'current_password': created['temporary_password'], 'new_password': pw})
+    return t
+
+
+def test_technician_search_and_folder_filter_respect_rights():
+    c = chef()
+    tag = uuid.uuid4().hex[:6]
+    l1 = c.post('/api/order-sheets', headers=H, json={'name': f'Costume {tag}', 'order_ref': f'CMD-{tag}-1', 'workshop': f'Atelier Nord {tag}', 'color': 'Bleu marine', 'of_number': f'OF-{tag}'}).json()['id']
+    l2 = c.post('/api/order-sheets', headers=H, json={'name': f'Veste {tag}', 'order_ref': f'CMD-{tag}-2', 'client_name': f'Client {tag}'}).json()['id']
+    l3 = c.post('/api/order-sheets', headers=H, json={'name': f'Hors affectation {tag}', 'order_ref': f'CMD-{tag}-3'}).json()['id']
+    upload(c, l1, 'jaune', f'Fiche technique {tag}.pdf', pdf(f'Fiche {tag}'))
+    upload(c, l1, 'rose', f'Bon secret {tag}.pdf', pdf(f'Bon {tag}'))          # rose non attribué au technicien
+    t = technician(c, {l1: {'jaune': ['document.read']}, l2: {'bleu': ['document.read', 'document.write']}})
+    def ids(**params):
+        r = t.get('/api/workspace/my-launches', params=params)
+        assert r.status_code == 200, r.text
+        return {row['launch_id']: [f['slug'] for f in row['folders']] for row in r.json()['items']}
+    assert ids() == {l1: ['jaune'], l2: ['bleu']}                              # requête vide : toutes mes commandes
+    assert ids(folder='bleu') == {l2: ['bleu']} and ids(folder='rose') == {}
+    assert ids(q=f'atelier nord {tag}'.upper()) == {l1: ['jaune']}            # atelier, casse ignorée
+    assert ids(q='bleu marine') == {l1: ['jaune']} and ids(q=f'of-{tag}') == {l1: ['jaune']}
+    assert ids(q=f'client {tag}') == {l2: ['bleu']} and ids(q=f'CMD-{tag}') == {l1: ['jaune'], l2: ['bleu']}
+    assert ids(q=f'fiche technique {tag}') == {l1: ['jaune']}                 # référence de document autorisé
+    assert ids(q=f'bon secret {tag}') == {}                                     # document d'un sous-dossier non autorisé
+    assert ids(q=f'hors affectation {tag}') == {}                               # commande non attribuée
+    assert ids(q=f'fiche technique {tag}', folder='bleu') == {}
+    assert t.get('/api/workspace/my-launches', params={'folder': 'violet'}).status_code == 422
+    # L'ouverture reste contrôlée par le serveur (aucun contournement par l'URL ou l'API).
+    assert t.get(f'/api/launches/{l3}').status_code in (403, 404)
+    assert c.get('/api/workspace/my-launches', params={'q': f'CMD-{tag}-3'}).json()['total'] == 1
+
+
+def test_latest_version_carries_delete_right():
+    """« Ouvrir » affiche la version courante : elle porte le même droit de suppression que l'historique."""
+    c = chef()
+    lid = c.post('/api/order-sheets', headers=H, json={'name': f'Droits {uuid.uuid4().hex[:6]}'}).json()['id']
+    doc = upload(c, lid, 'jaune', 'a.pdf', pdf(f'A {uuid.uuid4().hex}'))
+    new_version(c, doc['id'], 'a.pdf', pdf(f'B {uuid.uuid4().hex}'))
+    listed = next(d for f in c.get(f'/api/launches/{lid}').json()['folders'] for d in f['documents'] if d['id'] == doc['id'])
+    assert listed['latest'] == listed['versions'][-1] and listed['latest']['can_delete'] is True

@@ -287,23 +287,11 @@ def post_comment(version_id: str, payload: CommentPayload,
     return comment_out(db, item)
 
 
-@router.get("/api/workspace/search")
-def search(q: str = "", folder: str = "", doc_type: str = "", launch_id: str = "",
-           date_from: date | None = None, date_to: date | None = None,
-           limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0),
-           user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    must, permitted, _, _ = guards()
-    must(user, "launch.read")
-    launch_rows = {row.id: row for row in visible_launches(db, user)}
-    results = []
-    from .document_search import search_content
-    from .access_control import can
+def launch_index(db, launch_rows: dict):
+    """Texte de recherche de chaque commande autorisée, calculé une seule fois (fiche complète,
+    N° client du compte rattaché, N° de demande Client) ; insensible à la casse et aux accents."""
     from .client_models import ClientAccount, ClientOrderRequest
     from .client_workflow_models import ClientOrderLaunch
-    needle = fold(q)
-    content_matches = search_content(db, q) if q.strip() else {}
-    # Texte de recherche de chaque commande autorisée, calculé une seule fois (fiche complète,
-    # N° client du compte rattaché, N° de demande Client) ; insensible à la casse et aux accents.
     ops_rows = {row.launch_id: row for row in db.scalars(select(LaunchOperations).where(LaunchOperations.launch_id.in_(list(launch_rows))))} if launch_rows else {}
     accounts = {row.id: row for row in db.scalars(select(ClientAccount).where(ClientAccount.id.in_(
         [o.client_account_id for o in ops_rows.values() if o.client_account_id])))} if ops_rows else {}
@@ -322,6 +310,69 @@ def search(q: str = "", folder: str = "", doc_type: str = "", launch_id: str = "
                             "article": ops.article if ops else None, "workshop": ops.workshop if ops else None,
                             "color": ops.color if ops else None, "of_number": ops.of_number if ops else None,
                             "invoice_ref": ops.invoice_ref if ops else None}
+    return launch_text, launch_info
+
+
+@router.get("/api/workspace/my-launches")
+def my_launches(q: str = Query("", max_length=200), folder: Literal["", "jaune", "rose", "bleu", "vert"] = "",
+                user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Recherche « Mes commandes / Mes sous-dossiers » : même index que la recherche documentaire
+    (commande, N° client, client, article, atelier, couleur, N° OF, références de documents),
+    limitée aux sous-dossiers que l'utilisateur peut consulter. Une requête vide liste toutes ses
+    commandes (avec le filtre de sous-dossier éventuel). Aucune information d'un sous-dossier non
+    autorisé n'intervient : ni dans la correspondance, ni dans le résultat."""
+    must, _, _, _ = guards()
+    must(user, "launch.read")
+    from .access_control import can
+    from .active_documents import active_versions
+    from .document_search import search_content
+    from .models import Folder
+    launch_rows = {row.id: row for row in visible_launches(db, user)}
+    readable = {lid: [slug for slug in ("jaune", "rose", "bleu", "vert") if can(user, "document.read", slug, lid)] for lid in launch_rows}
+    readable = {lid: [slug for slug in slugs if not folder or slug == folder] for lid, slugs in readable.items()}
+    launch_rows = {lid: row for lid, row in launch_rows.items() if readable[lid]}
+    launch_text, launch_info = launch_index(db, launch_rows)
+    needle = fold(q)
+    content_matches = search_content(db, q) if q.strip() else {}
+    hits = {}                                   # commande → {sous-dossier: [références trouvées]}
+    if needle and launch_rows:
+        documents = db.scalars(select(Document).join(Folder).where(
+            Folder.launch_id.in_(list(launch_rows)), Document.deleted_at.is_(None))).all()
+        for document in documents:
+            lid, slug = document.folder.launch_id, document.folder.slug
+            if slug not in readable[lid]:
+                continue                        # sous-dossier non autorisé : jamais consulté
+            versions = active_versions(document)
+            text = fold(" ".join([document.title, document.doc_type, *(v.original_name for v in versions)]))
+            if needle in text or any(v.id in content_matches for v in versions):
+                hits.setdefault(lid, {}).setdefault(slug, []).append(document.title)
+    rows = []
+    for lid, launch in launch_rows.items():
+        by_order = not needle or needle in launch_text[lid]
+        if not by_order and lid not in hits:
+            continue
+        found = hits.get(lid, {})
+        rows.append({"launch_id": lid, "name": launch.name, "order_ref": launch.order_ref, "client_name": launch.client_name,
+                     **launch_info[lid], "matched_on": "commande" if by_order else "document",
+                     "folders": [{"slug": slug, "documents": found.get(slug, [])[:5]} for slug in readable[lid]
+                                 if by_order or slug in found]})
+    return {"query": q, "folder": folder or None, "total": len(rows), "items": rows[:200]}
+
+
+@router.get("/api/workspace/search")
+def search(q: str = "", folder: str = "", doc_type: str = "", launch_id: str = "",
+           date_from: date | None = None, date_to: date | None = None,
+           limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0),
+           user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    must, permitted, _, _ = guards()
+    must(user, "launch.read")
+    launch_rows = {row.id: row for row in visible_launches(db, user)}
+    results = []
+    from .document_search import search_content
+    from .access_control import can
+    needle = fold(q)
+    content_matches = search_content(db, q) if q.strip() else {}
+    launch_text, launch_info = launch_index(db, launch_rows)
     matched_launches = [{"launch_id": lid, "name": launch_rows[lid].name, "order_ref": launch_rows[lid].order_ref,
                          "client_name": launch_rows[lid].client_name, **launch_info[lid]}
                         for lid in launch_rows if needle and needle in launch_text[lid] and (not launch_id or lid == launch_id)]
