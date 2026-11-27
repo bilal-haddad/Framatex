@@ -4,6 +4,7 @@ Date de validation : 27 novembre 2026
 Branche : `feat/postgresql-final-cutover`  
 Base Git vérifiée : `bc9e0467e2c8466848f5823406a22900ae152431` (`feat/postgresql-migration`)  
 Commit d'implémentation validé : `5b1b7c1`  
+Commit contenant le code et le présent runbook validés : `42a6734`  
 
 `main` n'a pas été modifiée. Aucune donnée personnelle ni aucun fichier du poste Windows n'a été
 accessible depuis l'environnement de développement distant. La migration réelle de
