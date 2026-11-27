@@ -38,7 +38,7 @@ Wait-FramatexPostgres $python
 
 Write-Host "--- 5/10 Préparation non destructive de la base vide $TargetDatabase"
 Invoke-FramatexChecked $python @($cutover,'--report-dir',$reports,'prepare-target','--database',$TargetDatabase)
-$targetValues = Import-FramatexEnv -DatabaseOverride $TargetDatabase -DataDirOverride $TargetData
+$targetValues = Import-FramatexEnv -DatabaseOverride $TargetDatabase
 Wait-FramatexPostgres $python
 
 Write-Host '--- 6/10 Simulation (aucune écriture PostgreSQL)'
@@ -51,6 +51,7 @@ if ($answer -cne 'BASCULER VERS POSTGRESQL') { throw 'Bascule annulée. La confi
 
 Write-Host '--- 7/10 Copie vérifiée du stockage vers un dossier neuf'
 Invoke-FramatexChecked $python @($cutover,'--report-dir',$reports,'copy-storage','--source-data',$SourceData,'--target-data',$TargetData)
+$targetValues = Import-FramatexEnv -DatabaseOverride $TargetDatabase -DataDirOverride $TargetData
 
 Write-Host '--- 8/10 Transfert transactionnel de toutes les tables'
 Invoke-FramatexChecked $python @((Join-Path $PSScriptRoot 'migrate_sqlite_to_postgresql.py'),'--sqlite',$Sqlite,'--report-dir',$reports)

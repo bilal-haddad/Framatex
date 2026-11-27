@@ -61,6 +61,9 @@ def test_migrator_has_no_destructive_replace_option():
     assert "TRUNCATE" not in migrator.upper()
     assert "[switch]$Replace" not in launcher
     assert "BASCULER VERS POSTGRESQL" in launcher
+    copy_position = launcher.index("'copy-storage'")
+    target_activation = launcher.index("-DataDirOverride $TargetData", copy_position)
+    assert target_activation > copy_position
 
 
 def _legacy_source(root: Path):
