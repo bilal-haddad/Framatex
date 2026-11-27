@@ -38,7 +38,7 @@ def get_order(db, order_id):
     return item
 
 
-def transition_order(db, order, status, actor_id):
+def transition_order(db, order, status, actor_id, message=""):
     old = order.status
     if status == old:
         return order_out(order)
@@ -52,6 +52,8 @@ def transition_order(db, order, status, actor_id):
         raise HTTPException(409, "Demande modifiée entre-temps ; actualisez")
     add_audit(db, actor_id, "client.order_request.status_changed", "client_order_request", order.id,
               {"client_id": order.client_id, "previous": old, "status": status})
+    from .notification_events import order_status_changed
+    order_status_changed(db, order, status, message)
     db.commit()
     db.refresh(order)
     return order_out(order)

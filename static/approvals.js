@@ -37,10 +37,22 @@ function bindApprovalAdmin(){
  });
  app.querySelectorAll('[data-approval-toggle]').forEach(b=>b.addEventListener('click',async()=>{try{await api(`/api/admin/approval-templates/${b.dataset.approvalToggle}`,{method:'PATCH',body:JSON.stringify({active:b.dataset.approvalActive==='true'})});toast('Circuit mis à jour');await admin()}catch(err){showErr(err)}}));
 }
-function notificationItem(n){return `<article class="notification-item ${n.read_at?'':'unread'}"><div><strong>${e(n.title)}</strong><p>${e(n.message)}</p><small>${e(n.folder)} · ${niceDate(n.created_at)} · ${n.read_at?'Lue':'Non lue'}</small></div><div class="notification-actions"><button class="secondary tiny" data-notification-launch="${e(n.launch_id)}" data-notification-folder="${e(n.folder)}">Ouvrir le dossier</button>${!n.read_at?`<button class="link" data-notification-read="${e(n.id)}">Marquer comme lue</button>`:''}</div></article>`}
+function notificationItem(n){
+ const place=[n.order_ref||n.launch_name,n.folder].filter(Boolean).join(' · ');
+ return `<article class="notification-item ${n.read_at?'':'unread'}" data-priority="${e(n.priority)}"><div><div class="notification-meta"><span class="tag ${n.priority==='urgent'||n.priority==='high'?'orange':'blue'}">${e(n.priority)}</span>${n.action_required?'<span class="tag orange">Action en attente</span>':n.lifecycle==='resolved'?'<span class="tag green">Résolue</span>':''}</div><strong>${e(n.title)}</strong><p>${e(n.message)}</p><small>${place?e(place)+' · ':''}${niceDate(n.updated_at||n.created_at)} · ${n.read_at?'Lue':'Non lue'}</small></div><div class="notification-actions">${n.action_label||n.target_kind?`<button class="secondary tiny" data-notification-open="${e(n.id)}">${e(n.action_label||'Ouvrir')}</button>`:''}${!n.read_at?`<button class="link" data-notification-read="${e(n.id)}">Marquer comme lue</button>`:''}${!n.action_required&&n.lifecycle!=='archived'?`<button class="link" data-notification-archive="${e(n.id)}">Archiver</button>`:''}</div></article>`
+}
+async function openNotification(n){
+ if(!n.read_at)await api(`/api/notifications/${n.id}/read`,{method:'POST'});
+ if(n.target_kind==='client_order_request')return operationsClientRequest(n.target_id);
+ if(n.target_kind==='client_document_request'&&n.metadata?.order_request_id)return operationsClientRequest(n.metadata.order_request_id);
+ if(n.target_kind==='client_account')return navigate('clients');
+ if(n.launch_id)return openLaunch(n.launch_id,n.folder||null);
+ return notificationsPage();
+}
 async function notificationsPage(){
  state.view='notifications';state.notifications=await api('/api/notifications');const d=state.notifications;
- mount(`<div class="page-heading"><div><div class="page-kicker">SUIVI INTERNE</div><h1 class="page-title">Notifications<span style="color:#3e926e">.</span></h1><p class="page-lead">Alertes internes personnalisées : aucun email externe n'est envoyé. Les droits sont revérifiés à chaque consultation.</p></div></div><section class="panel notifications-panel"><div class="section-heading"><h2>${d.unread} notification(s) non lue(s)</h2><small>${d.total} visible(s)</small></div>${d.items.length?d.items.map(notificationItem).join(''):'<div class="empty">Aucune notification pour vos habilitations actuelles.</div>'}</section>`,'Notifications');
+ mount(`<div class="page-heading"><div><div class="page-kicker">CENTRE DE NOTIFICATIONS</div><h1 class="page-title">Notifications<span style="color:#3e926e">.</span></h1><p class="page-lead">Lire une notification ne termine pas l’action métier. Les droits sont revérifiés à chaque consultation.</p></div></div><section class="panel notifications-panel"><div class="section-heading"><h2>${d.unread} non lue(s) · ${d.actions} action(s) à traiter</h2><small>${d.visible} active(s) · ${d.total} dans l’historique</small></div>${d.items.length?d.items.map(notificationItem).join(''):'<div class="empty">Aucune notification pour vos habilitations actuelles.</div>'}</section>`,'Notifications');
  app.querySelectorAll('[data-notification-read]').forEach(b=>b.onclick=async()=>{try{await api(`/api/notifications/${b.dataset.notificationRead}/read`,{method:'POST'});await notificationsPage()}catch(err){showErr(err)}});
- app.querySelectorAll('[data-notification-launch]').forEach(b=>b.onclick=async()=>{try{await openLaunch(b.dataset.notificationLaunch,b.dataset.notificationFolder)}catch(err){showErr(err)}});
+ app.querySelectorAll('[data-notification-open]').forEach(b=>b.onclick=async()=>{try{await openNotification(d.items.find(n=>n.id===b.dataset.notificationOpen))}catch(err){showErr(err)}});
+ app.querySelectorAll('[data-notification-archive]').forEach(b=>b.onclick=async()=>{try{await api(`/api/notifications/${b.dataset.notificationArchive}/archive`,{method:'POST'});await notificationsPage()}catch(err){showErr(err)}});
 }

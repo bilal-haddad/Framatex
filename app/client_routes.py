@@ -174,6 +174,8 @@ def register(payload: RegisterPayload, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(409, "Compte client déjà existant")
     add_audit(db, client.id, "client.register", "client_account", client.id)
+    from .notification_events import account_registered
+    account_registered(db, client)
     db.commit()
     return client_out(client)
 
@@ -250,6 +252,8 @@ def set_client_status(client_id: str, payload: StatusPayload,
                           {'candidate_count': len(candidates)})
     add_audit(db, user.id, "client.status.update", "client_account", client.id,
               {"previous": previous, "status": payload.status})
+    from .notification_events import account_status_changed
+    account_status_changed(db, client, payload.status)
     db.commit()
     return client_out(client)
 
@@ -270,6 +274,9 @@ def create_order_request(payload: OrderPayload, client: ClientAccount = Depends(
     db.flush()
     add_audit(db, client.id, "client.order_request.create", "client_order_request", order.id,
               {"request_number": order.request_number, "status": order.status})
+    if order.status == "submitted":
+        from .notification_events import order_status_changed
+        order_status_changed(db, order, "submitted")
     db.commit()
     return order_out(order)
 

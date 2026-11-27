@@ -32,6 +32,7 @@ class ClientOrderStatus(BaseModel):
 
 class InternalOrderStatus(BaseModel):
     status: Literal["under_review", "accepted", "rejected"]
+    message: str = Field(default="", max_length=2000)
 
 
 class DocumentRequestInput(BaseModel):
@@ -84,7 +85,7 @@ def client_order_status(order_id: str, payload: ClientOrderStatus,
 def internal_order_status(order_id: str, payload: InternalOrderStatus,
                           user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     internal_user(user)
-    return transition_order(db, get_order(db, order_id), payload.status, user.id)
+    return transition_order(db, get_order(db, order_id), payload.status, user.id, payload.message)
 
 
 @router.post("/api/admin/client-order-requests/{order_id}/launch")
@@ -143,6 +144,8 @@ def open_launch_for_order(order_id: str, response: Response,
           {"name": launch.name, "orli": None, "client_order_request": order.request_number})
     add_audit(db, user.id, "client.order_request.launch_created", "client_order_request", order.id,
               {"client_id": order.client_id, "launch_id": launch.id, "request_number": order.request_number})
+    from .notification_events import launch_created_from_order
+    launch_created_from_order(db, order, launch)
     try:
         db.commit()
     except IntegrityError:
@@ -167,6 +170,9 @@ def ask_document(order_id: str, payload: DocumentRequestInput,
     db.add(item)
     db.flush()
     request_event(db, item, None, user.id, "internal")
+    from .notification_events import client_document_event
+    client_document_event(db, client_id=order.client_id, request_id=item.id, order_id=order.id,
+                          title=item.title, status="requested", message=item.description)
     commit_workflow(db)
     return request_out(db, item)
 
@@ -209,6 +215,12 @@ def review_document(request_id: str, payload: DocumentDecision,
     item.updated_at = utcnow()
     item.accepted_at = utcnow() if payload.status == "accepted" else None
     request_event(db, item, previous, user.id, "internal", version=version, message=payload.message)
+    from .notification_events import client_document_event, resolve_client_document_review
+    client_document_event(db, client_id=item.client_id, request_id=item.id,
+                          order_id=item.order_request_id, title=item.title,
+                          status=payload.status, message=payload.message)
+    if payload.status in {"accepted", "correction_required"}:
+        resolve_client_document_review(db, item.id)
     commit_workflow(db)
     return request_out(db, item)
 
@@ -254,6 +266,11 @@ async def upload_requested(request_id: str, file: UploadFile = File(...),
         item.updated_at = utcnow()
         item.accepted_at = None
         request_event(db, item, previous, client.id, "client", version=version)
+        from .notification_events import client_document_uploaded
+        client_document_uploaded(db, request_id=item.id, order_id=item.order_request_id, title=item.title)
+        from .notification_service import resolve_event
+        resolve_event(db, recipient_type="client", event_key=f"client-document:{item.id}",
+                      recipient_ids=[client.id])
         commit_workflow(db)
     except (IntegrityError, StaleDataError):
         db.rollback()
@@ -353,6 +370,11 @@ def share_document(client_id: str, payload: ShareInput,
         raise HTTPException(409, "Cette version est déjà partagée avec ce client")
     add_audit(db, user.id, "client.shared_document.published", "client_shared_document", item.id,
               {"client_id": client_id, "version_id": version.id, "launch": version.document.folder.launch_id})
+    from .notification_service import upsert_notification
+    upsert_notification(db, recipient_type="client", recipient_id=client_id,
+        event_key=f"shared-document:{item.id}", kind="document_shared",
+        title="Nouveau document partagé", message=item.title, priority="normal",
+        target_kind="shared_document", target_id=item.id)
     db.commit()
     return shared_out(db, item, internal=True)
 

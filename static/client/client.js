@@ -65,6 +65,7 @@ const ROUTES = [
   { path: '/documents-demandes', view: viewDocumentRequests, title: 'Documents demandés par FRAMATEX', auth: true, nav: 'requested' },
   { path: '/documents-demandes/:id', view: viewDocumentRequest, title: 'Pièce demandée par FRAMATEX', auth: true, nav: 'requested' },
   { path: '/documents-transmis', view: viewSharedDocuments, title: 'Documents transmis par FRAMATEX', auth: true, nav: 'shared' },
+  { path: '/notifications', view: viewNotifications, title: 'Notifications', auth: true, nav: 'notifications' },
   { path: '/compte', view: viewAccount, title: 'Mon compte', auth: true, nav: 'account' },
 ];
 
@@ -179,6 +180,7 @@ const NAV = [
   { key: 'requests', href: '#/demandes', label: 'Mes demandes', icon: 'layers' },
   { key: 'new', href: '#/demandes/nouvelle', label: 'Nouvelle demande', icon: 'plus' },
   { key: 'documents', href: '#/documents-demandes', label: 'Documents', icon: 'folder' },
+  { key: 'notifications', href: '#/notifications', label: 'Notifications', icon: 'bell' },
   { key: 'account', href: '#/compte', label: 'Mon compte', icon: 'users' },
 ];
 // Les trois vues documentaires partagent l'entrée « Documents » et des onglets.
@@ -206,6 +208,16 @@ async function refreshPendingBadge() {
   } catch { /* le badge est un confort : son absence ne bloque rien */ }
 }
 
+async function refreshNotificationBadge() {
+  try {
+    const data = await source.listNotifications();
+    app.querySelectorAll('[data-client-notifications]').forEach(badge => {
+      badge.textContent = data.unread; badge.hidden = !data.unread;
+      badge.setAttribute('aria-label', `${data.unread} notification(s) non lue(s), ${data.actions} action(s) à traiter`);
+    });
+  } catch { /* compteur non bloquant */ }
+}
+
 function identity() {
   const c = state.client || {};
   return `<div class="identity">
@@ -217,7 +229,7 @@ function identity() {
 
 function navList(active) {
   const current = NAV_GROUP[active] || active;
-  return `<ul class="nav-list">${NAV.map(n => `<li><a class="nav-link${n.key === current ? ' is-active' : ''}" href="${n.href}"${n.key === current ? ' aria-current="page"' : ''}>${icon(n.icon)}<span>${n.label}</span>${n.key === 'documents' ? '<span class="nav-badge" data-pending-docs hidden></span>' : ''}</a></li>`).join('')}</ul>`;
+  return `<ul class="nav-list">${NAV.map(n => `<li><a class="nav-link${n.key === current ? ' is-active' : ''}" href="${n.href}"${n.key === current ? ' aria-current="page"' : ''}>${icon(n.icon)}<span>${n.label}</span>${n.key === 'documents' ? '<span class="nav-badge" data-pending-docs hidden></span>' : n.key === 'notifications' ? '<span class="nav-badge" data-client-notifications hidden></span>' : ''}</a></li>`).join('')}</ul>`;
 }
 
 function shellLayout(active, content) {
@@ -234,12 +246,14 @@ function shellLayout(active, content) {
         <button type="button" class="nav-link nav-logout" data-logout>${icon('out')}<span>Déconnexion</span></button>
       </div>
     </aside>
+    <a class="client-bell-desktop" href="#/notifications" aria-label="Notifications">${icon('bell')}<span class="nav-badge" data-client-notifications hidden></span></a>
 
     <header class="topbar">
       <a class="brand" href="#/demandes" aria-label="Espace Client FRAMATEX — mes demandes">
         <img src="${LOGO}" alt="FRAMATEX" width="500" height="500" />
         <span class="brand-label">Espace Client</span>
       </a>
+      <a class="client-bell" href="#/notifications" aria-label="Notifications">${icon('bell')}<span class="nav-badge" data-client-notifications hidden></span></a>
       <button type="button" class="menu-btn" data-drawer-open aria-expanded="false" aria-controls="drawer">
         <span class="menu-bars" aria-hidden="true"><span></span><span></span><span></span></span><span>Menu</span>
       </button>
@@ -280,6 +294,7 @@ function mountShell(active, content) {
   app.querySelector('[data-drawer-open]')?.addEventListener('click', openDrawer);
   app.querySelectorAll('[data-drawer-close]').forEach(b => b.addEventListener('click', closeDrawer));
   refreshPendingBadge();
+  refreshNotificationBadge();
 }
 
 function openDrawer() {
@@ -1068,6 +1083,26 @@ async function viewSharedDocuments() {
   } catch (err) { handleScreenError(err, body); }
 }
 
+async function viewNotifications() {
+  mountShell('notifications', `${pageHead({ title: 'Notifications', lead: 'Vos informations et actions FRAMATEX, réunies au même endroit.' })}<div id="notifications-body">${loadingState()}</div>`);
+  const body = app.querySelector('#notifications-body');
+  try {
+    const data = await source.listNotifications();
+    const destination = item => item.target_kind === 'client_order_request' ? `/demandes/${encodeURIComponent(item.target_id)}`
+      : item.target_kind === 'client_document_request' ? `/documents-demandes/${encodeURIComponent(item.target_id)}`
+      : item.target_kind === 'shared_document' ? '/documents-transmis' : '/notifications';
+    body.innerHTML = `<div class="notification-summary"><strong>${data.unread} non lue(s)</strong><span>${data.actions} action(s) à traiter</span></div>${data.items.length ? data.items.map(item => `<article class="card client-notification${item.read_at ? '' : ' is-unread'}"><div class="card-head"><h2 class="card-title">${esc(item.title)}</h2><span class="badge badge-${item.priority === 'urgent' || item.priority === 'high' ? 'warn' : 'neutral'}">${esc(item.priority)}</span></div><p>${esc(item.message)}</p><p class="side-text">${fmtDate(item.updated_at || item.created_at)} · ${item.lifecycle === 'resolved' ? 'Résolue' : item.read_at ? 'Lue' : 'Non lue'}${item.action_required ? ' · Action en attente' : ''}</p><div class="form-actions"><button class="btn btn-secondary btn-sm" data-client-notification-open="${esc(item.id)}" data-destination="${esc(destination(item))}">${icon('arrow')}${esc(item.action_label || 'Consulter')}</button>${!item.action_required && item.lifecycle !== 'archived' ? `<button class="btn btn-quiet btn-sm" data-client-notification-archive="${esc(item.id)}">Archiver</button>` : ''}</div></article>`).join('') : emptyState({ title: 'Aucune notification.', text: 'Les événements concernant votre compte apparaîtront ici.' })}`;
+    body.querySelectorAll('[data-client-notification-open]').forEach(button => button.addEventListener('click', async () => {
+      try { await source.readNotification(button.dataset.clientNotificationOpen); go(button.dataset.destination); }
+      catch (err) { toast(messageFor(err), 'warn'); }
+    }));
+    body.querySelectorAll('[data-client-notification-archive]').forEach(button => button.addEventListener('click', async () => {
+      try { await source.archiveNotification(button.dataset.clientNotificationArchive); await viewNotifications(); }
+      catch (err) { toast(messageFor(err), 'warn'); }
+    }));
+  } catch (err) { handleScreenError(err, body); }
+}
+
 // J. Mon compte (lecture seule : aucune modification de profil côté backend pour l'instant)
 // --------------------------------------------------------------------------
 const ACCOUNT_STATUS = { active: 'Actif', pending: 'En attente de validation', suspended: 'Suspendu' }; // ClientAccount.status
@@ -1111,6 +1146,10 @@ async function viewAccount() {
 
 window.addEventListener('hashchange', render);
 render();
+const notificationChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('framatex-notifications') : null;
+notificationChannel?.addEventListener('message', () => { if (state.client) refreshNotificationBadge(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && state.client) refreshNotificationBadge(); });
+setInterval(() => { if (!document.hidden && state.client) refreshNotificationBadge(); }, 15000);
 
 // Tissu 3D dans le panneau décoratif des pages d'authentification (grands écrans, WebGL, mouvement non réduit).
 function mountAuthFabric() {

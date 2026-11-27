@@ -94,6 +94,9 @@ export function loginClient({ email, password }) {
 export function logoutClient() { return call('/logout', { method: 'POST' }); }
 /** GET /api/client/me */
 export function getCurrentClient() { return call('/me', { context: 'session' }); }
+export function listNotifications() { return call('/notifications'); }
+export function readNotification(id) { return call(`/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' }); }
+export function archiveNotification(id) { return call(`/notifications/${encodeURIComponent(id)}/archive`, { method: 'POST' }); }
 
 // ---- Demandes de commande --------------------------------------------------
 /** GET /api/client/order-requests — demandes du client connecté uniquement. */

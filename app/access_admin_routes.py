@@ -162,23 +162,23 @@ def set_assignments(db: Session, actor: User, target: User, launch: Launch,
         else:
             row.actions, row.granted_by = json.dumps(wanted), actor.id
             audit(db, actor, "access.assignment.update", "launch", launch.id, detail)
-    if changes and folders and not current:
-        notify_new_assignment(db, target, launch, folders)
+    if changes:
+        from .notification_events import assignments_changed, sync_assignment_action
+        prefs = prefs_of(db.get(CollaboratorProfile, target.id))
+        if prefs.get("internal", True) and prefs.get("new_assignments", True):
+            assignments_changed(db, launch, target, folders, first=bool(folders and not current))
+        sync_assignment_action(db, launch)
     invalidate()
     return changes
 
 
 def notify_new_assignment(db: Session, target: User, launch: Launch, folders: dict):
-    """Notification interne « nouvelle affectation », selon les préférences du collaborateur."""
-    from .approval_models import InternalNotification
+    """Compatibilité : délègue au centre unifié avec une clé métier stable."""
     prefs = prefs_of(db.get(CollaboratorProfile, target.id))
     if not prefs.get("internal", True) or not prefs.get("new_assignments", True):
         return
-    names = ", ".join(FOLDER_NAMES[s] for s in FOLDERS if s in folders)
-    db.add(InternalNotification(recipient_id=target.id, event_key=f"assignment:{launch.id}:{secrets.token_hex(4)}",
-                                kind="assignment", launch_id=launch.id, folder_slug=next(iter(folders)),
-                                title=f"Nouvelle affectation : {launch.order_ref or launch.name}",
-                                message=f"Sous-dossiers : {names}."))
+    from .notification_events import assignments_changed
+    assignments_changed(db, launch, target, folders, first=True)
 
 
 # --------------------------------------------------------------------------- catalogue

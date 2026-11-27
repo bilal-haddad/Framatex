@@ -215,8 +215,6 @@ def start_run(doc_id: str, user: User = Depends(get_current_user), db: Session =
         db.rollback()
         raise HTTPException(409,'Conflit de soumission de cette version')
     return run_out(db,run,user,doc)
-
-
 @router.post('/api/approval-runs/{run_id}/decisions')
 def decide_stage(run_id: str, payload: StageDecisionInput,
                  user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -270,37 +268,3 @@ def decide_stage(run_id: str, payload: StageDecisionInput,
         db.rollback()
         raise HTTPException(409,'Une décision a déjà été enregistrée pour cette étape')
     return run_out(db,run,user,doc)
-
-
-def notification_out(n: InternalNotification):
-    return {'id':n.id,'kind':n.kind,'title':n.title,'message':n.message,
-            'launch_id':n.launch_id,'folder':n.folder_slug,
-            'created_at':n.created_at.isoformat(),'read_at':n.read_at.isoformat() if n.read_at else None}
-
-
-def notification_visible(user: User, n: InternalNotification):
-    # Évaluée sur la commande de la notification : un retrait de droit la masque immédiatement.
-    from .access_control import launch_scope
-    with launch_scope(n.launch_id):
-        return (permitted_now(user,'launch.read') and permitted_now(user,'document.read',n.folder_slug))
-
-
-@router.get('/api/notifications')
-def notifications(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    must(user,'launch.read')
-    records = db.scalars(select(InternalNotification).where(
-        InternalNotification.recipient_id == user.id).order_by(InternalNotification.created_at.desc()).limit(250)).all()
-    from .access import accessible
-    visible = [notification_out(n) for n in records if notification_visible(user,n) and accessible(db,user,db.get(Launch,n.launch_id))]
-    return {'items':visible,'unread':sum(n['read_at'] is None for n in visible), 'total':len(visible)}
-
-
-@router.post('/api/notifications/{notification_id}/read')
-def mark_notification(notification_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    n = db.get(InternalNotification,notification_id)
-    if not n or n.recipient_id != user.id or not notification_visible(user,n):
-        raise HTTPException(404,'Notification introuvable')
-    if n.read_at is None:
-        n.read_at = utcnow()
-        db.commit()
-    return notification_out(n)

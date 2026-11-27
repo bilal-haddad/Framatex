@@ -933,6 +933,9 @@ app.include_router(material_router)
 from .approval_routes import router as approval_router
 app.include_router(approval_router)
 
+from .notification_routes import router as notification_router
+app.include_router(notification_router)
+
 # 0.14 — Publications client et demandes fournisseurs simulées (accès uniquement interne).
 from .sharing_routes import router as sharing_router
 app.include_router(sharing_router)

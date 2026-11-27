@@ -41,7 +41,8 @@ def _install_postgres_listeners():
         config = _alembic_config()
         config.attributes["connection"] = connection
         command.stamp(config, "0019")              # tables créées par create_all
-        command.upgrade(config, "head")            # objets de recherche (0020)
+        command.upgrade(config, "0020")             # objets de recherche hors metadata
+        command.stamp(config, "head")               # tables 0021+ déjà créées par create_all
 
 
 def pytest_sessionstart(session):

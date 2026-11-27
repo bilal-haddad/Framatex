@@ -6,7 +6,7 @@ ce qui empêche une notification ancienne d'exposer un dossier après retrait d'
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .models import User
-from .approval_models import InternalNotification
+from .notification_service import upsert_notification
 
 
 PREFERENCE_BY_KIND = {
@@ -47,9 +47,12 @@ def emit_to_role(db: Session, *, role_id: str, launch_id: str, folder: str,
         if not (permitted_now(user, 'launch.read') and permitted_now(user, 'document.read', folder, launch_id)
                 and permitted_now(user, action, folder, launch_id)):
             continue
-        db.add(InternalNotification(recipient_id=user.id, event_key=event_key, kind=kind,
-                                    launch_id=launch_id, folder_slug=folder,
-                                    title=title, message=message))
+        upsert_notification(db, recipient_type="internal", recipient_id=user.id,
+            event_key=event_key, kind=kind, title=title, message=message,
+            priority="high" if kind in {"approval", "impact", "quality_recheck"} else "normal",
+            action_required=kind in {"approval", "impact", "quality_recheck"},
+            action_label="Ouvrir le dossier", target_kind="launch", target_id=launch_id,
+            launch_id=launch_id, folder=folder)
 
 
 def emit_to_folder(db: Session, *, launch_id: str, source_folder: str, target_folder: str,
@@ -66,9 +69,10 @@ def emit_to_folder(db: Session, *, launch_id: str, source_folder: str, target_fo
                          and permitted_now(user, 'controls.read', target_folder, launch_id)))
                 and permitted_now(user, action, target_folder, launch_id)):
             continue
-        db.add(InternalNotification(recipient_id=user.id, event_key=event_key, kind=kind,
-                                    launch_id=launch_id, folder_slug=source_folder,
-                                    title=title, message=message))
+        upsert_notification(db, recipient_type="internal", recipient_id=user.id,
+            event_key=event_key, kind=kind, title=title, message=message, priority="high",
+            action_required=True, action_label="Examiner", target_kind="launch",
+            target_id=launch_id, launch_id=launch_id, folder=source_folder)
 
 
 def emit_to_user(db: Session, *, user_id: str, launch_id: str, folder: str,
@@ -81,6 +85,8 @@ def emit_to_user(db: Session, *, user_id: str, launch_id: str, folder: str,
             or not (permitted_now(user, 'launch.read')
                     and permitted_now(user, 'document.read', folder, launch_id))):
         return
-    db.add(InternalNotification(recipient_id=user.id, event_key=event_key, kind=kind,
-                                launch_id=launch_id, folder_slug=folder,
-                                title=title, message=message))
+    upsert_notification(db, recipient_type="internal", recipient_id=user.id,
+        event_key=event_key, kind=kind, title=title, message=message,
+        priority="high" if kind == "approval_result" else "normal",
+        action_required=False, action_label="Ouvrir", target_kind="launch",
+        target_id=launch_id, launch_id=launch_id, folder=folder)

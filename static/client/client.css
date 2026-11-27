@@ -201,6 +201,12 @@ h1:focus { outline: none; }
 .nav-logout:hover .ico { color: var(--danger); }
 
 .topbar, .drawer, .drawer-backdrop { display: none; }
+.client-bell-desktop { position: fixed; z-index: 45; top: 22px; right: 28px; display: inline-flex; align-items: center; gap: 6px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 99px; background: #fff; color: var(--navy); box-shadow: var(--shadow); text-decoration: none; }
+.client-bell-desktop .ico, .client-bell .ico { width: 19px; height: 19px; }
+.client-bell { display: inline-flex; align-items: center; gap: 4px; color: var(--navy); text-decoration: none; }
+.notification-summary { display: flex; gap: 16px; margin-bottom: 18px; color: var(--muted); }
+.client-notification + .client-notification { margin-top: 14px; }
+.client-notification.is-unread { border-left: 4px solid var(--cyan); }
 .shell-main { min-width: 0; }
 .page { max-width: 1120px; margin: 0 auto; padding: 36px 40px 64px; }
 .page-head { margin-bottom: 28px; }
@@ -384,6 +390,7 @@ h1:focus { outline: none; }
 }
 
 @media (max-width: 900px) {
+  .client-bell-desktop { display: none; }
   .shell { grid-template-columns: minmax(0, 1fr); }
   .sidebar { display: none; }
   .topbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 64px; padding: 0 20px; background: #fff; border-bottom: 1px solid var(--line); }

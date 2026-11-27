@@ -153,7 +153,7 @@ function fxShell() {
     crumb.textContent = last;
     for (const part of parts) crumb.insertAdjacentHTML('beforebegin', `<span class="fx-crumb">${e(part)}</span>${icon('arrow')}`);
   }
-  fxUnread(state.view === 'notifications').then(data => fxBadges(data?.unread || 0));
+  fxUnread(state.view === 'notifications').then(data => fxBadges(data?.unread || 0, data?.actions || 0));
   if (['launches', 'experience'].includes(state.view)) fxCompactFilters();
   fxGroupActions();
 }
@@ -195,17 +195,31 @@ function fxActive(key) {
   return state.view === key || (state.view === 'detail' && key === 'launches');
 }
 
-function fxBadges(unread) {
+function fxBadges(unread, actions = 0) {
   const nav = app.querySelector('.sidebar [data-view="notifications"]');
   nav?.querySelector('.fx-badge')?.remove();
   if (nav && unread) nav.insertAdjacentHTML('beforeend', `<span class="fx-badge" aria-label="${unread} non lue${unread > 1 ? 's' : ''}">${unread > 99 ? '99+' : unread}</span>`);
   const bell = app.querySelector('#top-notifications');
   bell?.querySelector('.fx-top-count')?.remove();
   if (bell) {
-    bell.setAttribute('aria-label', unread ? `Notifications : ${unread} non lue${unread > 1 ? 's' : ''}` : 'Notifications');
+    bell.setAttribute('aria-label', `Notifications : ${unread} non lue(s), ${actions} action(s) à traiter`);
     if (unread) bell.insertAdjacentHTML('beforeend', `<span class="fx-top-count">${unread > 99 ? '99+' : unread}</span>`);
+    bell.title = actions && actions !== unread ? `${unread} non lue(s) · ${actions} action(s) à traiter` : 'Notifications';
   }
 }
+
+// Une seule requête groupée alimente les compteurs. Le polling est suspendu
+// dans les onglets cachés et un BroadcastChannel accélère la synchronisation.
+const fxNotificationChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('framatex-notifications') : null;
+async function fxRefreshNotifications(force = true) {
+  const data = await fxUnread(force);
+  fxBadges(data?.unread || 0, data?.actions || 0);
+  return data;
+}
+fxNotificationChannel?.addEventListener('message', () => fxRefreshNotifications(true));
+document.addEventListener('visibilitychange', () => { if (!document.hidden && state.me) fxRefreshNotifications(true); });
+setInterval(() => { if (!document.hidden && state.me) fxRefreshNotifications(true); }, 15000);
+window.fxRefreshNotifications = fxRefreshNotifications;
 
 // Commandes : filtres principaux sur une ligne, critères secondaires repliés.
 function fxCompactFilters() {
