@@ -46,6 +46,8 @@ def test_windows_launchers_are_postgresql_only_and_keep_typed_options():
     backup = (ROOT / "scripts/backup_framatex.py").read_text(encoding="utf-8")
     assert "$ErrorActionPreference = 'Continue'" in common
     assert "Invoke-FramatexNative $python @('-c','import psycopg, alembic') -Quiet" in common
+    assert "print('Dependances PostgreSQL : OK')" in common
+    assert "FRAMATEX_PG_PASSWORD'].Length -lt 20" in common
     assert "[int]$Port" in wrapper
     assert all(f"[switch]${name}" in wrapper for name in ("Demo", "NoBrowser", "CheckOnly", "Reload"))
     assert "$start = @{ Port = $Port }" in wrapper and "@start" in wrapper
@@ -119,3 +121,32 @@ def test_source_backup_storage_copy_and_guarded_activation(tmp_path):
 def test_activation_refuses_demo_database(tmp_path):
     with pytest.raises(RuntimeError, match="démonstration"):
         cutover.activate_config(tmp_path / ".env", "framatex_test", tmp_path, tmp_path / "report.json")
+
+
+def test_only_dates_generated_on_copy_are_neutralized(tmp_path):
+    from sqlalchemy import Column, MetaData, String, Table, create_engine
+    from scripts.verify_postgresql_migration import table_digest
+
+    table = Table("schema_migrations", MetaData(),
+                  Column("version", String, primary_key=True), Column("applied_at", String))
+    left = create_engine(f"sqlite:///{tmp_path / 'left.db'}")
+    right = create_engine(f"sqlite:///{tmp_path / 'right.db'}")
+    try:
+        table.metadata.create_all(left); table.metadata.create_all(right)
+        with left.begin() as connection:
+            connection.execute(table.insert(), [
+                {"version": "0016_order_sheet", "applied_at": "historique-A"},
+                {"version": "0017_optional_documents", "applied_at": "copie-A"},
+            ])
+        with right.begin() as connection:
+            connection.execute(table.insert(), [
+                {"version": "0016_order_sheet", "applied_at": "historique-B"},
+                {"version": "0017_optional_documents", "applied_at": "copie-B"},
+            ])
+        with left.connect() as a, right.connect() as b:
+            da = table_digest(a, table, {"0017_optional_documents"})
+            db = table_digest(b, table, {"0017_optional_documents"})
+        assert da[("0017_optional_documents",)] == db[("0017_optional_documents",)]
+        assert da[("0016_order_sheet",)] != db[("0016_order_sheet",)]
+    finally:
+        left.dispose(); right.dispose()

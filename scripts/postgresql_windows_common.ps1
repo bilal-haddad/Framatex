@@ -32,17 +32,30 @@ function Import-FramatexEnv([string]$DatabaseOverride = '', [string]$DataDirOver
     foreach ($line in Get-Content -LiteralPath $EnvFile -Encoding UTF8) {
         if ($line -match '^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$') { $values[$Matches[1]] = $Matches[2].Trim('"') }
     }
+    if ($DatabaseOverride) { $values['FRAMATEX_PG_DATABASE'] = $DatabaseOverride }
+    if ($DataDirOverride) { $values['FRAMATEX_DATA_DIR'] = $DataDirOverride }
     foreach ($name in 'FRAMATEX_PG_HOST','FRAMATEX_PG_PORT','FRAMATEX_PG_DATABASE','FRAMATEX_PG_USER') {
         if (-not $values[$name]) { throw "$name manquant dans .env" }
     }
-    if (-not $values['FRAMATEX_PG_PASSWORD']) { throw 'FRAMATEX_PG_PASSWORD vide dans .env (mot de passe local, au moins 20 caractères).' }
+    if ($values['FRAMATEX_PG_HOST'] -notin @('127.0.0.1','localhost')) {
+        throw 'FRAMATEX_PG_HOST doit être 127.0.0.1 ou localhost pour le démarrage local.'
+    }
+    $pgPort = 0
+    if (-not [int]::TryParse($values['FRAMATEX_PG_PORT'], [ref]$pgPort) -or $pgPort -lt 1 -or $pgPort -gt 65535) {
+        throw 'FRAMATEX_PG_PORT doit être un entier compris entre 1 et 65535.'
+    }
+    foreach ($name in 'FRAMATEX_PG_DATABASE','FRAMATEX_PG_USER') {
+        if ($values[$name] -notmatch '^[A-Za-z_][A-Za-z0-9_]{0,62}$') { throw "$name contient un identifiant PostgreSQL invalide." }
+    }
+    if (-not $values['FRAMATEX_DATA_DIR']) { throw 'FRAMATEX_DATA_DIR manquant dans .env.' }
+    if (-not $values['FRAMATEX_PG_PASSWORD'] -or $values['FRAMATEX_PG_PASSWORD'].Length -lt 20) {
+        throw 'FRAMATEX_PG_PASSWORD doit contenir au moins 20 caractères.'
+    }
     if (-not $values['FRAMATEX_PG_MODE']) { $values['FRAMATEX_PG_MODE'] = 'local' }
     if ($values['FRAMATEX_PG_MODE'] -ne 'local') {
         throw 'FRAMATEX_PG_MODE doit valoir local. Le demarrage definitif ne depend pas de Docker.'
     }
     if (-not $values['FRAMATEX_PG_SERVICE']) { $values['FRAMATEX_PG_SERVICE'] = 'postgresql-x64-17' }
-    if ($DatabaseOverride) { $values['FRAMATEX_PG_DATABASE'] = $DatabaseOverride }
-    if ($DataDirOverride) { $values['FRAMATEX_DATA_DIR'] = $DataDirOverride }
     foreach ($key in $values.Keys) {
         if ($key -ne 'FRAMATEX_PG_PASSWORD') { Set-Item -Path "Env:$key" -Value $values[$key] }
     }
@@ -69,7 +82,9 @@ function Get-FramatexPython {
         Write-Host 'Installation des dépendances PostgreSQL (psycopg, alembic)...'
         Invoke-FramatexChecked $python @('-m','pip','install','--disable-pip-version-check','-r',(Join-Path $Root 'requirements.txt'))
     }
-    Invoke-FramatexChecked $python @('-c','import psycopg, alembic; print("Dependances PostgreSQL : OK")')
+    # PowerShell 5.1 retire parfois les guillemets doubles imbriqués lors du
+    # marshalling natif. Le littéral Python utilise donc des quotes simples.
+    Invoke-FramatexChecked $python @('-c',"import psycopg, alembic; print('Dependances PostgreSQL : OK')")
     return $python
 }
 

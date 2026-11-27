@@ -65,7 +65,17 @@ def bring_copy_to_0019(copy: Path):
     finally:
         legacy.engine = saved
         engine.dispose()
-    return engine
+
+
+def existing_migration_versions(copy: Path) -> set[str]:
+    """Révisions présentes dans la source avant préparation de la copie."""
+    with sqlite3.connect(f"file:{copy}?mode=ro", uri=True) as connection:
+        present = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
+        ).fetchone()
+        if not present:
+            return set()
+        return {row[0] for row in connection.execute("SELECT version FROM schema_migrations")}
 
 
 def source_tables(src_engine, metadata):
@@ -192,6 +202,7 @@ def main():
     work = Path(tempfile.mkdtemp(prefix="framatex-transfert-"))
     report = {"started_at": started, "mode": "simulation" if args.dry_run else "transfert", "source": str(args.sqlite.resolve()),
               "target": f"{pg_engine.url.host}:{pg_engine.url.port}/{pg_engine.url.database}", "anomalies": [], "status": "en cours"}
+    src_engine = None
     try:
         copy = snapshot(args.sqlite.resolve(), work)
         bring_copy_to_0019(copy)
@@ -233,6 +244,10 @@ def main():
         report["status"] = f"échec, aucune donnée validée dans PostgreSQL : {exc.__class__.__name__}: {exc}"[:2000]
         return report
     finally:
+        # Indispensable sous Windows : le pool SQLAlchemy conserverait sinon un
+        # handle sur source-copie.db et shutil.rmtree échouerait avec WinError 32.
+        if src_engine is not None:
+            src_engine.dispose()
         path = write_report(report, args.report_dir)
         shutil.rmtree(work, ignore_errors=True)
         print(json.dumps({k: report[k] for k in ("mode", "status")} | {"anomalies": len(report["anomalies"]),

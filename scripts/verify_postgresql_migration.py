@@ -47,7 +47,10 @@ def normalize(value):
     return value
 
 
-def table_digest(conn, table):
+TECHNICAL_COPY_REVISIONS = {"0017_optional_documents", "0018_document_purge", "0019_idempotency"}
+
+
+def table_digest(conn, table, generated_copy_revisions=frozenset()):
     from sqlalchemy import select
     keys = [c.name for c in table.primary_key.columns]
     columns = [c.name for c in table.columns]
@@ -55,7 +58,17 @@ def table_digest(conn, table):
     for row in conn.execute(select(table)):
         data = row._mapping
         key = tuple(str(data[k]) for k in keys)
-        rows[key] = hashlib.sha256(json.dumps([normalize(data[c]) for c in columns], ensure_ascii=False, default=str).encode()).hexdigest()
+        values = []
+        for column in columns:
+            value = data[column]
+            # Les seules valeurs neutralisées sont les dates du registre SQLite
+            # générées sur la COPIE par 0017–0019. Toutes les dates métier et les
+            # révisions déjà présentes dans l'original restent comparées strictement.
+            if (table.name == "schema_migrations" and column == "applied_at"
+                    and data.get("version") in generated_copy_revisions):
+                value = "<date-technique-générée-sur-copie>"
+            values.append(normalize(value))
+        rows[key] = hashlib.sha256(json.dumps(values, ensure_ascii=False, default=str).encode()).hexdigest()
     return rows
 
 
@@ -80,11 +93,15 @@ def main():
     import app.all_models  # noqa: F401
     from app.core import Base, engine as pg_engine
     from app.migrate import postgresql_heads
-    from migrate_sqlite_to_postgresql import bring_copy_to_0019, snapshot, source_tables
+    from migrate_sqlite_to_postgresql import (bring_copy_to_0019, existing_migration_versions,
+                                               snapshot, source_tables)
     work = Path(tempfile.mkdtemp(prefix="framatex-verification-"))
     anomalies, summary = [], {}
+    src_engine = None
     try:
         copy = snapshot(args.sqlite.resolve(), work)
+        original_revisions = existing_migration_versions(copy)
+        generated_copy_revisions = TECHNICAL_COPY_REVISIONS - original_revisions
         bring_copy_to_0019(copy)
         src_engine = create_engine(f"sqlite:///{copy}")
         tables, present = source_tables(src_engine, Base.metadata)
@@ -97,7 +114,8 @@ def main():
             for table in tables:
                 if table.name not in pg_tables:
                     anomalies.append({"type": "table_absente", "table": table.name}); continue
-                a, b = table_digest(src, table), table_digest(dst, table)
+                a = table_digest(src, table, generated_copy_revisions)
+                b = table_digest(dst, table, generated_copy_revisions)
                 summary[table.name] = {"sqlite": len(a), "postgresql": len(b)}
                 if len(a) != len(b):
                     anomalies.append({"type": "comptes", "table": table.name, "sqlite": len(a), "postgresql": len(b)})
@@ -130,6 +148,7 @@ def main():
             summary["fichiers"] = files
         report = {"verified_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "status": "conforme" if not anomalies else "anomalies",
                   "target_database": pg_engine.url.database,
+                  "technical_copy_dates_ignored": sorted(generated_copy_revisions),
                   "tables": len(tables), "rows": sum(v["sqlite"] for k, v in summary.items() if isinstance(v, dict) and "sqlite" in v),
                   "anomalies": anomalies, "summary": summary}
         args.report_dir.mkdir(parents=True, exist_ok=True)
@@ -140,6 +159,8 @@ def main():
                           "exemples": anomalies[:5], "rapport": str(path)}, ensure_ascii=False, indent=1))
         return 0 if not anomalies else 2
     finally:
+        if src_engine is not None:
+            src_engine.dispose()
         shutil.rmtree(work, ignore_errors=True)
 
 
