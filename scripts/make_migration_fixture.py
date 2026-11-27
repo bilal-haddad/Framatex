@@ -7,7 +7,7 @@ matières, emails, circuits, habilitations…), ajoute documents complémentaire
 vérification de conservation, suppression définitive et clés d'idempotence, puis copie la base et
 les fichiers (aucune donnée réelle ; comptes example.test / framatex.test fictifs).
 """
-import argparse, json, shutil, sqlite3, sys, uuid
+import argparse, json, os, shutil, sqlite3, sys, uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +19,10 @@ def main():
     dest = parser.parse_args().dest.resolve()
     if dest.exists():
         sys.exit('Le dossier de destination doit être absent (aucun écrasement).')
+    # Outil d'import historique uniquement : l'application et les recettes normales
+    # refusent SQLite. Cette fixture ne contient aucune donnée opérationnelle réelle.
+    os.environ['FRAMATEX_BUILD_LEGACY_FIXTURE'] = '1'
+    os.environ['FRAMATEX_LEGACY_SQLITE_MODE'] = '1'
     import httpx
     import qa_platform_review as recette
     qa = recette.QA()

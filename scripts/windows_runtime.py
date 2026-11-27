@@ -19,7 +19,6 @@ import secrets
 import shutil
 import signal
 import socket
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -612,17 +611,12 @@ def diagnose():
         emit(f'{label} : {value}')
     emit(f'Python : {sys.version.split()[0]} ({sys.executable})')
     database_url = os.getenv('DATABASE_URL', '')
-    database = Path(database_url.removeprefix('sqlite:///')) if database_url.startswith('sqlite:///') else data_dir() / 'framat.db'
-    emit(f'DB : {database if not database_url or database_url.startswith("sqlite:///") else "externe (URL masquée)"}')
-    if (not database_url or database_url.startswith('sqlite:///')) and database.exists():
-        try:
-            with sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True, timeout=1) as connection:
-                revisions = [row[0] for row in connection.execute('SELECT version FROM schema_migrations ORDER BY version')]
-            emit('Migrations appliquées (lecture seule) : ' + ', '.join(revisions))
-        except sqlite3.Error as exc:
-            emit(f'Migrations : {exc}')
+    if database_url.startswith(('postgresql', 'postgres')):
+        emit('DB : PostgreSQL (URL masquée)')
+        emit('Migrations : diagnostic en lecture seule, utilisez `python -m app.db check` pour contrôler Alembic.')
     else:
-        emit('Migrations : DB absente ou externe, aucune création / migration effectuée.')
+        emit('DB : configuration PostgreSQL absente ou invalide ; aucun repli SQLite.')
+        emit('Migrations : non vérifiées, aucune création / migration effectuée.')
     runtime = read_json(data_dir() / 'runtime.json', {})
     listeners = []
     if os.name == 'nt':

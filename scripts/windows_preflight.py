@@ -2,14 +2,12 @@
 
     python scripts/windows_preflight.py deps                 # dépendances importables
     python scripts/windows_preflight.py code                 # syntaxe Python de app/ et scripts/
-    python scripts/windows_preflight.py db                   # data, verrou SQLite, sauvegarde, migrations
+    python scripts/windows_preflight.py db                   # stockage et connexion PostgreSQL
     python scripts/windows_preflight.py accounts [--email E] # comptes internes et Client
     python scripts/windows_preflight.py create-admin --email E   # mot de passe lu dans FRAMATEX_SECRET_INPUT
     python scripts/windows_preflight.py seed --email E       # dossiers de démonstration A–E (idempotent)
 
-Aucune donnée n'est supprimée. La sauvegarde utilise l'API de sauvegarde SQLite
-(copie cohérente même si la base est ouverte ailleurs). Aucun mot de passe n'est
-lu en argument, affiché ou écrit : create-admin le reçoit dans une variable
+Aucune donnée n'est supprimée. Aucun mot de passe n'est lu en argument, affiché ou écrit : create-admin le reçoit dans une variable
 d'environnement propre à ce processus, retirée dès la lecture.
 """
 from __future__ import annotations
@@ -31,6 +29,7 @@ MODULES = {
     'pydantic': 'pydantic', 'openpyxl': 'openpyxl', 'pypdf': 'pypdf', 'docx': 'python-docx',
     'PIL': 'Pillow', 'pytesseract': 'pytesseract', 'fitz': 'PyMuPDF', 'qrcode': 'qrcode',
     'tzdata': 'tzdata',  # fuseau Africa/Casablanca sous Windows
+    'psycopg': 'psycopg[binary]', 'alembic': 'alembic',
 }
 if os.name == 'nt':
     MODULES['psutil'] = 'psutil'

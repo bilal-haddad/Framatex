@@ -129,6 +129,7 @@ def main():
                         anomalies.append({"type": "empreinte_différente", "table": table, "fichier": f"{folder}/{disk}"})
             summary["fichiers"] = files
         report = {"verified_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "status": "conforme" if not anomalies else "anomalies",
+                  "target_database": pg_engine.url.database,
                   "tables": len(tables), "rows": sum(v["sqlite"] for k, v in summary.items() if isinstance(v, dict) and "sqlite" in v),
                   "anomalies": anomalies, "summary": summary}
         args.report_dir.mkdir(parents=True, exist_ok=True)

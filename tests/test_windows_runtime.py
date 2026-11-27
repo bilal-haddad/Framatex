@@ -177,7 +177,6 @@ def test_diagnostic_does_not_create_data_or_secret(tmp_path):
 
 def test_real_gated_worker_socket_transfer_and_shutdown(tmp_path, monkeypatch):
     monkeypatch.setenv('FRAMATEX_DATA_DIR', str(tmp_path))
-    monkeypatch.delenv('DATABASE_URL', raising=False)
     reserved = runtime.reserve_port(0)
     port = reserved.getsockname()[1]
     server, job, pid, out, err = runtime.start_worker(reserved, 'unit-runtime', tmp_path)
@@ -203,7 +202,6 @@ def test_real_gated_worker_socket_transfer_and_shutdown(tmp_path, monkeypatch):
 
 def test_failed_optional_checks_keep_server_alive_and_never_report_success(tmp_path, monkeypatch):
     monkeypatch.setenv('FRAMATEX_DATA_DIR', str(tmp_path))
-    monkeypatch.delenv('DATABASE_URL', raising=False)
     monkeypatch.setattr(runtime, 'CHECKPOINTS', (0, 1))  # unit test only; real recipe uses 0/2/10/30/60
     monkeypatch.setattr(runtime, 'check_platform', lambda *args: (_ for _ in ()).throw(RuntimeError('forced optional failure')))
     reservation = runtime.reserve_port(0)

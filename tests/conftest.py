@@ -1,8 +1,9 @@
-"""Configuration commune des tests.
+"""Configuration commune : toute la suite courante s'exécute sur PostgreSQL.
 
-Les tests s'exécutent sur SQLite par défaut (base temporaire). Pour les exécuter sur PostgreSQL :
     DATABASE_URL=postgresql+psycopg://framatex@127.0.0.1:5432/framatex_test PGPASSWORD=… pytest
-(la base doit être vide : le schéma y est créé par les migrations Alembic au début de la session).
+
+La base doit être dédiée aux tests. Les rares tests de migrations historiques créent
+eux-mêmes une base SQLite isolée ; l'application testée reste connectée à PostgreSQL.
 """
 import os
 import secrets
@@ -14,11 +15,10 @@ os.environ.setdefault("FRAMATEX_ACCESS_LOG", "0")
 
 
 POSTGRES = os.environ.get("DATABASE_URL", "").startswith(("postgresql", "postgres"))
-if POSTGRES:
-    # Les tests recréent librement la base (drop_all / create_all) puis démarrent l'application, comme
-    # SQLite le permet. Sous PostgreSQL, la version Alembic et l'index de recherche suivent ces
-    # opérations ; le démarrage applique alors les migrations manquantes (comme le migrateur SQLite).
-    os.environ.setdefault("FRAMATEX_AUTO_MIGRATE", "1")
+if not POSTGRES:
+    raise RuntimeError("Tests refusés : DATABASE_URL doit désigner une base PostgreSQL dédiée.")
+# Les tests recréent librement le schéma ; la base de recette ne doit contenir aucune donnée réelle.
+os.environ.setdefault("FRAMATEX_AUTO_MIGRATE", "1")
 
 
 def _install_postgres_listeners():
@@ -45,16 +45,15 @@ def _install_postgres_listeners():
 
 
 def pytest_sessionstart(session):
-    if POSTGRES:
-        import app.all_models  # noqa: F401
-        from app.migrate import migrate
-        _install_postgres_listeners()
-        migrate()
+    import app.all_models  # noqa: F401
+    from app.migrate import migrate
+    _install_postgres_listeners()
+    migrate()
 
 
 def pytest_report_header(config):
     url = os.environ.get("DATABASE_URL", "")
-    return f"base de test : {'PostgreSQL' if url.startswith(('postgresql', 'postgres')) else 'SQLite (temporaire)'}"
+    return f"base de test : PostgreSQL ({url.rsplit('/', 1)[-1]})"
 
 
 def reset_database():

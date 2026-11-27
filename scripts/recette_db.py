@@ -1,9 +1,7 @@
-"""Base de recette isolée : SQLite temporaire (défaut) ou base PostgreSQL neuve et jetable.
+"""Base PostgreSQL neuve et jetable pour chaque recette.
 
-Si FRAMATEX_RECETTE_DATABASE_URL désigne un serveur PostgreSQL (rôle autorisé à créer des bases,
-mot de passe via PGPASSWORD), chaque recette crée une base vide dédiée, y applique les migrations
-au démarrage (FRAMATEX_AUTO_MIGRATE=1, comme le migrateur SQLite) et la supprime à la fin.
-Sinon DATABASE_URL est retirée : la recette utilise SQLite dans son dossier temporaire (inchangé).
+FRAMATEX_RECETTE_DATABASE_URL doit désigner une base de maintenance PostgreSQL. Il n'existe plus de
+repli automatique SQLite : une recette mal configurée échoue avant de créer la moindre donnée.
 """
 import atexit
 import os
@@ -12,12 +10,20 @@ import uuid
 
 def use_isolated_database(env=None):
     env = os.environ if env is None else env
+    # Exception strictement réservée au générateur de fixture d'import historique.
+    # Les recettes courantes n'activent jamais ces deux drapeaux et restent PostgreSQL-only.
+    if (env.get("FRAMATEX_BUILD_LEGACY_FIXTURE") == "1" and
+            env.get("FRAMATEX_LEGACY_SQLITE_MODE") == "1"):
+        from pathlib import Path
+        url = "sqlite:///" + str(Path(env["FRAMATEX_DATA_DIR"]) / "framat.db")
+        for target in {id(env): env, id(os.environ): os.environ}.values():
+            target["DATABASE_URL"] = url
+            target["FRAMATEX_LEGACY_SQLITE_MODE"] = "1"
+            target["FRAMATEX_BUILD_LEGACY_FIXTURE"] = "1"
+        return url
     base = os.getenv("FRAMATEX_RECETTE_DATABASE_URL", "")
     if not base.startswith(("postgresql", "postgres")):
-        env.pop("DATABASE_URL", None)
-        if env is not os.environ:
-            os.environ.pop("DATABASE_URL", None)
-        return None
+        raise RuntimeError("FRAMATEX_RECETTE_DATABASE_URL PostgreSQL est obligatoire pour les recettes.")
     import psycopg
     admin = base.replace("postgresql+psycopg://", "postgresql://", 1)
     name = f"framatex_recette_{uuid.uuid4().hex[:12]}"

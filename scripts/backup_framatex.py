@@ -1,10 +1,10 @@
-"""Sauvegarde, vérification et restauration de FRAMATEX (base SQLite ou PostgreSQL et fichiers).
+"""Sauvegarde, vérification et restauration de FRAMATEX (PostgreSQL et fichiers).
 
-Le moteur suit DATABASE_URL : SQLite par défaut ; PostgreSQL (postgresql+psycopg://…, mot de passe
-via PGPASSWORD) : `pg_dump` au format personnalisé, vérification par `pg_restore` dans une base
+Le moteur courant est obligatoirement PostgreSQL (postgresql+psycopg://…, mot de passe via
+PGPASSWORD) : `pg_dump` au format personnalisé, vérification par `pg_restore` dans une base
 temporaire neuve (supprimée ensuite), restauration dans une base NOUVELLE (--pg-database) — jamais
-dans la base en service. Outils pg_dump/pg_restore : ceux du PATH, sinon ceux du conteneur Docker
-« framatex-postgres » (docker-compose.postgresql.yml).
+dans la base en service. Outils pg_dump/pg_restore : installation PostgreSQL locale, via PATH ou
+FRAMATEX_PG_BIN. L'import historique SQLite utilise `postgresql_cutover.py backup-source`.
 
     python scripts/backup_framatex.py restore archive.zip --to D:/Restauration --pg-database framatex_restauration
 
@@ -146,15 +146,17 @@ def pg_params(database: str | None = None) -> dict:
 
 
 def pg_tool(tool: str, params: dict, extra: list[str], **run) -> subprocess.CompletedProcess:
-    """Exécute pg_dump / pg_restore (PATH, sinon conteneur Docker) ; mot de passe via PGPASSWORD."""
+    """Exécute les outils clients PostgreSQL locaux ; mot de passe via PGPASSWORD."""
     env = {**os.environ, "PGHOST": params["host"], "PGPORT": params["port"], "PGUSER": params["user"], "PGDATABASE": params["dbname"]}
-    if shutil.which(tool):
-        return subprocess.run([tool, *extra], env=env, check=True, **run)
-    if shutil.which("docker"):
-        inside = ["docker", "exec", "-i", "-e", "PGPASSWORD", "-e", f"PGUSER={params['user']}", "-e", f"PGDATABASE={params['dbname']}",
-                  "framatex-postgres", tool, *[a for a in extra if not a.startswith("--file=")]]
-        return subprocess.run(inside, env=env, check=True, **run)
-    sys.exit(f"{tool} introuvable (installer les outils clients PostgreSQL 16 ou utiliser le conteneur Docker)")
+    executable = shutil.which(tool)
+    configured = os.getenv("FRAMATEX_PG_BIN", "").strip()
+    if not executable and configured:
+        candidate = Path(configured) / (tool + (".exe" if os.name == "nt" else ""))
+        if candidate.is_file():
+            executable = str(candidate)
+    if not executable:
+        sys.exit(f"{tool} introuvable. Configurez FRAMATEX_PG_BIN vers le dossier bin de PostgreSQL 17.")
+    return subprocess.run([executable, *extra], env=env, check=True, **run)
 
 
 def pg_connect(database: str | None = None, autocommit: bool = False):
@@ -245,7 +247,9 @@ def main():
     r.add_argument("--pg-database", help="PostgreSQL : nom de la NOUVELLE base à créer pour la restauration")
     args = parser.parse_args()
     if args.command == "backup":
-        archive = (backup_postgres if postgres_url() else backup)(args.data_dir.resolve(), args.dest.resolve(), args.keep)
+        if not postgres_url():
+            sys.exit("DATABASE_URL PostgreSQL est obligatoire : aucun repli vers une sauvegarde SQLite courante.")
+        archive = backup_postgres(args.data_dir.resolve(), args.dest.resolve(), args.keep)
         report = verify(archive)
     elif args.command == "verify":
         report = verify(args.archive)

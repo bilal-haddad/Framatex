@@ -1,12 +1,30 @@
-﻿<# Fonctions communes aux scripts PostgreSQL Windows de FRAMATEX (Windows PowerShell 5.1+).
-   Lit .env (jamais versionné), prépare DATABASE_URL SANS mot de passe et PGPASSWORD pour le seul
-   processus courant, démarre PostgreSQL (Docker Desktop) ou vérifie le service Windows. #>
+﻿<# Fonctions communes PostgreSQL pour Windows PowerShell 5.1+.
+   Aucun repli SQLite et aucune dépendance Docker. Le mot de passe reste dans le processus courant. #>
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
-$ComposeFile = Join-Path $Root 'docker-compose.postgresql.yml'
 $EnvFile = Join-Path $Root '.env'
 
-function Import-FramatexEnv {
+function Invoke-FramatexNative([string]$File, [string[]]$Arguments, [switch]$Quiet) {
+    # Sous Windows PowerShell 5.1, stderr d'une commande native peut devenir une
+    # exception NativeCommandError lorsque ErrorActionPreference vaut Stop.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        if ($Quiet) { & $File @Arguments 2>$null | Out-Null }
+        else { & $File @Arguments | Out-Host }
+        $script:FramatexNativeExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+    return $script:FramatexNativeExit
+}
+
+function Invoke-FramatexChecked([string]$File, [string[]]$Arguments) {
+    $code = Invoke-FramatexNative $File $Arguments
+    if ($code -ne 0) { throw "Commande en echec (code $code). Voir la sortie ci-dessus." }
+}
+
+function Import-FramatexEnv([string]$DatabaseOverride = '', [string]$DataDirOverride = '') {
     if (-not (Test-Path -LiteralPath $EnvFile)) {
         throw ".env introuvable. Copier .env.example en .env puis renseigner FRAMATEX_PG_PASSWORD."
     }
@@ -18,7 +36,13 @@ function Import-FramatexEnv {
         if (-not $values[$name]) { throw "$name manquant dans .env" }
     }
     if (-not $values['FRAMATEX_PG_PASSWORD']) { throw 'FRAMATEX_PG_PASSWORD vide dans .env (mot de passe local, au moins 20 caractères).' }
-    if (-not $values['FRAMATEX_PG_MODE']) { $values['FRAMATEX_PG_MODE'] = 'docker' }
+    if (-not $values['FRAMATEX_PG_MODE']) { $values['FRAMATEX_PG_MODE'] = 'local' }
+    if ($values['FRAMATEX_PG_MODE'] -ne 'local') {
+        throw 'FRAMATEX_PG_MODE doit valoir local. Le demarrage definitif ne depend pas de Docker.'
+    }
+    if (-not $values['FRAMATEX_PG_SERVICE']) { $values['FRAMATEX_PG_SERVICE'] = 'postgresql-x64-17' }
+    if ($DatabaseOverride) { $values['FRAMATEX_PG_DATABASE'] = $DatabaseOverride }
+    if ($DataDirOverride) { $values['FRAMATEX_DATA_DIR'] = $DataDirOverride }
     foreach ($key in $values.Keys) {
         if ($key -ne 'FRAMATEX_PG_PASSWORD') { Set-Item -Path "Env:$key" -Value $values[$key] }
     }
@@ -31,38 +55,48 @@ function Import-FramatexEnv {
 function Get-FramatexPython {
     $python = Join-Path $Root '.venv\Scripts\python.exe'
     if (-not (Test-Path -LiteralPath $python)) {
-        throw 'Environnement Python absent : lancer une première fois scripts\start_windows.cmd (création de .venv), puis réessayer.'
+        Write-Host 'Creation de l environnement Python local (.venv)...'
+        $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
+        if ($launcher) { Invoke-FramatexChecked $launcher.Source @('-3','-m','venv',(Join-Path $Root '.venv')) }
+        else {
+            $launcher = Get-Command python.exe -ErrorAction SilentlyContinue
+            if (-not $launcher) { throw 'Python 3.11+ introuvable. Installer Python depuis python.org (option Add to PATH).' }
+            Invoke-FramatexChecked $launcher.Source @('-m','venv',(Join-Path $Root '.venv'))
+        }
     }
-    & $python -c "import psycopg, alembic" 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    $probe = Invoke-FramatexNative $python @('-c','import psycopg, alembic') -Quiet
+    if ($probe -ne 0) {
         Write-Host 'Installation des dépendances PostgreSQL (psycopg, alembic)...'
-        & $python -m pip install --disable-pip-version-check -r (Join-Path $Root 'requirements.txt')
-        if ($LASTEXITCODE -ne 0) { throw 'Installation des dépendances impossible.' }
+        Invoke-FramatexChecked $python @('-m','pip','install','--disable-pip-version-check','-r',(Join-Path $Root 'requirements.txt'))
     }
+    Invoke-FramatexChecked $python @('-c','import psycopg, alembic; print("Dependances PostgreSQL : OK")')
     return $python
 }
 
 function Start-FramatexPostgres([hashtable]$Values) {
-    if ($Values['FRAMATEX_PG_MODE'] -eq 'docker') {
-        if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-            throw 'Docker introuvable. Installer Docker Desktop (voir docs/POSTGRESQL_MIGRATION_REPORT.md) ou passer FRAMATEX_PG_MODE=local.'
-        }
-        & docker info *> $null
-        if ($LASTEXITCODE -ne 0) { throw 'Docker Desktop n''est pas démarré. Lancer Docker Desktop puis réessayer.' }
-        $env:FRAMATEX_PG_PASSWORD = $env:PGPASSWORD      # lu par docker compose pour créer la base au premier démarrage
-        try { & docker compose -f $ComposeFile up -d postgres } finally { Remove-Item Env:FRAMATEX_PG_PASSWORD -ErrorAction SilentlyContinue }
-        if ($LASTEXITCODE -ne 0) { throw 'Démarrage du conteneur PostgreSQL impossible (voir ci-dessus).' }
-    } else {
-        $service = Get-Service -Name 'postgresql*' -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $service) { throw 'Service PostgreSQL introuvable. Installer PostgreSQL 16 pour Windows ou passer FRAMATEX_PG_MODE=docker.' }
-        if ($service.Status -ne 'Running') {
-            Write-Host "Démarrage du service $($service.Name) (droits administrateur nécessaires)..."
-            Start-Service -Name $service.Name
-        }
+    $serviceName = $Values['FRAMATEX_PG_SERVICE']
+    $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    if (-not $service) {
+        throw "Service PostgreSQL $serviceName introuvable. Verifier PostgreSQL 17 et la valeur FRAMATEX_PG_SERVICE dans .env."
     }
+    if ($service.Status -ne 'Running') {
+        Write-Host "Demarrage du service $serviceName (droits administrateur parfois necessaires)..."
+        Start-Service -Name $serviceName
+        $service = Get-Service -Name $serviceName
+        if ($service.Status -ne 'Running') { throw "Le service $serviceName n est pas demarre." }
+    }
+    $pgBin = $Values['FRAMATEX_PG_BIN']
+    if (-not $pgBin) {
+        $details = Get-CimInstance Win32_Service -Filter "Name='$serviceName'" -ErrorAction SilentlyContinue
+        if ($details -and $details.PathName -match '"([^\"]+\\pg_ctl\.exe)"') { $pgBin = Split-Path -Parent $Matches[1] }
+        elseif ($details -and $details.PathName -match '^(\S+\\pg_ctl\.exe)') { $pgBin = Split-Path -Parent $Matches[1] }
+    }
+    if ($pgBin -and (Test-Path -LiteralPath $pgBin)) {
+        $env:PATH = "$pgBin;$env:PATH"
+    }
+    Write-Host "Service PostgreSQL : $serviceName ($($service.Status))."
 }
 
 function Wait-FramatexPostgres([string]$Python) {
-    & $Python (Join-Path $Root 'scripts\wait_for_postgresql.py') --timeout 90
-    if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL ne répond pas.' }
+    Invoke-FramatexChecked $Python @((Join-Path $Root 'scripts\wait_for_postgresql.py'),'--timeout','90')
 }

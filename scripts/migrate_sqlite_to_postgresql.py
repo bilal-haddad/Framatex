@@ -4,8 +4,6 @@
     python scripts/migrate_sqlite_to_postgresql.py --sqlite data/framat.db --dry-run
     # 2. Transfert réel (base PostgreSQL vide, schéma créé ou mis à jour par Alembic) :
     python scripts/migrate_sqlite_to_postgresql.py --sqlite data/framat.db
-    # 3. Relance volontaire sur une base PostgreSQL déjà remplie (remplacement atomique) :
-    python scripts/migrate_sqlite_to_postgresql.py --sqlite data/framat.db --replace
 
 La cible est lue dans DATABASE_URL (postgresql+psycopg://…, mot de passe via PGPASSWORD ou .pgpass).
 
@@ -19,8 +17,8 @@ Garanties :
   la colonne cible, NULL interdits, doublons sur contrainte d'unicité, booléens invalides. Toute anomalie
   est rapportée et **bloque** le transfert : rien n'est corrigé silencieusement ;
 - transfert en une seule transaction PostgreSQL (tout ou rien), comptes vérifiés avant validation ;
-  relance sans doublon : refus si la cible contient déjà des données, sauf --replace (vidage puis
-  copie, dans la même transaction).
+  relance sans doublon : refus si la cible contient déjà des données. Ce script ne vide jamais une
+  base existante et ne propose aucune option destructive.
 
 Rapport : JSON et Markdown dans --report-dir (par défaut data/migration-reports/).
 """
@@ -180,7 +178,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--sqlite", type=Path, required=True, help="base SQLite source (jamais modifiée)")
     parser.add_argument("--dry-run", action="store_true", help="simulation : contrôles et comptages, aucune écriture")
-    parser.add_argument("--replace", action="store_true", help="vider la base PostgreSQL cible avant la copie (même transaction)")
     parser.add_argument("--report-dir", type=Path, default=ROOT / "data" / "migration-reports")
     args = parser.parse_args()
     url = os.getenv("DATABASE_URL", "")
@@ -218,12 +215,9 @@ def main():
         t0 = time.perf_counter()
         with src_engine.connect() as src, pg_engine.begin() as dst:
             existing = target_row_total(dst, tables)
-            if existing and not args.replace:
-                report["status"] = f"refusé : la base cible contient déjà {existing} ligne(s) (relancer avec --replace pour la remplacer)"
-                return report
             if existing:
-                names = ", ".join(f'"{t.name}"' for t in tables)
-                dst.execute(text(f"TRUNCATE {names}, document_search_index"))
+                report["status"] = f"refusé : la base cible contient déjà {existing} ligne(s). Aucun vidage automatique n'est autorisé."
+                return report
             report["tables"] = copy_rows(src, dst, tables)
             report["search_index_rows"] = copy_search_index(src, dst, present)
             target_counts = {t.name: dst.execute(text(f'SELECT COUNT(*) FROM "{t.name}"')).scalar() for t in tables}

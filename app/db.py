@@ -1,4 +1,4 @@
-"""Administration de la base FRAMATEX (moteur choisi par DATABASE_URL).
+"""Administration de la base PostgreSQL courante de FRAMATEX.
 
     python -m app.db status      révision appliquée et attendue
     python -m app.db upgrade     applique les migrations (un seul processus à la fois)

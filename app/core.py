@@ -17,15 +17,27 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.getenv("FRAMATEX_DATA_DIR", str(ROOT / "data"))).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-# Moteur choisi par DATABASE_URL (SQLite par défaut, solution de secours) :
-#   sqlite:///…/framat.db
-#   postgresql+psycopg://utilisateur@hôte:5432/framatex  (mot de passe via PGPASSWORD ou .pgpass,
-#   jamais dans le code ; « postgresql:// » est accepté et converti vers le pilote psycopg 3).
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'framat.db'}")
+# PostgreSQL est le moteur courant unique. Une indisponibilité ou une configuration
+# absente doit être visible : aucun repli silencieux vers un fichier SQLite neuf.
+# SQLite reste accepté uniquement pour les outils explicites de lecture/migration
+# des anciennes bases et les fixtures historiques isolées.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL PostgreSQL est absente. Démarrez le service PostgreSQL puis "
+        "lancez FRAMATEX avec scripts\\start_windows.cmd. Aucun repli SQLite n'est effectué."
+    )
 if DATABASE_URL.startswith(("postgresql://", "postgres://")):
     DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL.split("://", 1)[1]
 IS_SQLITE = DATABASE_URL.startswith("sqlite")
 IS_POSTGRES = DATABASE_URL.startswith("postgresql")
+if IS_SQLITE and os.getenv("FRAMATEX_LEGACY_SQLITE_MODE") != "1":
+    raise RuntimeError(
+        "SQLite est réservé aux outils historiques de migration. "
+        "Configurez DATABASE_URL vers PostgreSQL pour exécuter FRAMATEX."
+    )
+if not (IS_SQLITE or IS_POSTGRES):
+    raise RuntimeError("DATABASE_URL doit utiliser PostgreSQL (pilote psycopg 3).")
 
 
 def _engine_options() -> dict:
