@@ -92,7 +92,7 @@ python -m app.seed_quality_demo
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-**Démonstration sous Windows, en une commande** : `.\scripts\start_windows.cmd -Demo`. Elle prépare `.venv`, vérifie/sauvegarde/migre la base, contrôle l'admin de démo (mot de passe masqué obligatoire) et les dossiers A–E, nettoie uniquement les anciens serveurs de ce dépôt et réserve un socket exclusif. Le superviseur reste au premier plan jusqu'à Ctrl+C, vérifie l'instance à T+0/2/10/30/60 s, teste réellement les interfaces avec Chromium et ouvre l'unique URL choisie. Diagnostic sans modifier la DB : `.\scripts\diagnose_windows.cmd`. Voir les [détails et limites Windows natives](docs/WINDOWS_LOCAL.md).
+**Démarrage Windows PostgreSQL** : `.\scripts\start_windows.cmd`. PostgreSQL 17 local est obligatoire ; aucune indisponibilité ne provoque un repli SQLite. Le mode `.\scripts\start_windows.cmd -Demo` utilise obligatoirement `framatex_test` et un stockage distincts de la base définitive. Le démarrage normal ne crée aucune donnée fictive. Diagnostic sans modification : `.\scripts\diagnose_windows.cmd`. Bascule historique : `.\scripts\migrate_to_postgresql_windows.cmd`. Voir [le guide Windows](docs/WINDOWS_LOCAL.md) et [le rapport de bascule](docs/POSTGRESQL_FINAL_CUTOVER_REPORT.md).
 
 Si l'activation PowerShell échoue, utilisez directement `.venv\Scripts\python.exe` à la place de `python` pour les commandes suivantes. Le programme demande un mot de passe de 12 caractères minimum pour le premier administrateur : **aucun mot de passe par défaut n'est fourni**.
 
@@ -138,7 +138,7 @@ Sans les scripts de démonstration, le moteur ne génère **aucune règle ni ale
 
 ```text
 app/
-  core.py                   SQLite, authentification et sessions
+  core.py                   PostgreSQL, authentification et sessions
   models.py                 Lancements, sous-dossiers, documents, rôles, utilisateurs
   completeness_models.py    Règles de complétude et exceptions
   completeness.py           Évaluation contextuelle des pièces attendues
@@ -170,7 +170,7 @@ static/
  tests/                     Tests API et tests de fragments frontend
 ```
 
-**Stack utilisée pour cette étape :** FastAPI, SQLAlchemy et SQLite, frontend JavaScript et CSS fournis sans compilation. PostgreSQL et React/TypeScript restent possibles, mais **ne sont pas intégrés** au prototype actuellement livré.
+**Stack courante :** FastAPI, SQLAlchemy, PostgreSQL 17 et Alembic, frontend JavaScript et CSS fournis sans compilation. SQLite est conservé uniquement dans les outils explicites d'import historique en lecture/copie sûre.
 
 ## Tests
 

@@ -3,29 +3,38 @@
 Depuis la racine du dépôt :
 
 ```powershell
+.\scripts\start_windows.cmd
+```
+
+Cette commande charge `.env`, démarre si nécessaire le service Windows
+`postgresql-x64-17`, vérifie la connexion et Alembic, puis lance FRAMATEX. Aucun
+Docker et aucun repli SQLite. Le port est choisi et l'unique URL est ouverte automatiquement. Gardez cette
+fenêtre ouverte : **Ctrl+C ou fermeture volontaire = arrêt du serveur**. La fin
+d'une sonde HTTP, du test Chromium ou l'ouverture de Chrome ne l'arrête pas.
+
+Le mode démonstration reste explicite :
+
+```powershell
 .\scripts\start_windows.cmd -Demo
 ```
 
-Le port est choisi et l'unique URL est ouverte automatiquement. Gardez cette
-fenêtre ouverte : **Ctrl+C ou fermeture volontaire = arrêt du serveur**. La fin
-d'une sonde HTTP, du test Chromium ou l'ouverture de Chrome ne l'arrête pas.
+Il exige `FRAMATEX_PG_DEMO_DATABASE=framatex_test` et
+`FRAMATEX_DEMO_DATA_DIR=D:\Bilal\Downloads\bilaaaal\Framatex-pg-test-data`,
+distincts de la base et du stockage définitifs.
 
 ## Préparation et administrateur
 
 Python 3.11+ est requis. Le lanceur utilise exclusivement le `.venv` Windows de
 ce dépôt, créé si absent, sans effacer un environnement existant. Il vérifie les
-imports et installe les dépendances manquantes. En `-Demo`, il prépare Playwright
+imports, y compris `psycopg` et `alembic`, et installe les dépendances manquantes. En `-Demo`, il prépare Playwright
 et Chromium : Chrome/Edge installé, sinon téléchargement Playwright. Le premier
-démarrage nécessite Internet. Après nettoyage des anciens serveurs, SQLite est
-contrôlée, sauvegardée et migrée selon le mécanisme existant. Une intégrité SQLite
-non valide est bloquante. Aucun schéma ni migration métier n'est ajouté ici.
+démarrage peut nécessiter Internet. PostgreSQL doit être joignable ; sinon le
+lanceur s'arrête avec un message clair. Les migrations Alembic sont appliquées
+sous verrou consultatif, puis la révision attendue est contrôlée.
 
 Fuseau horaire : Windows ne fournit pas la base IANA. Le paquet `tzdata` est
 déclaré dans `requirements.txt` et vérifié par `scripts/windows_preflight.py` ;
-sans lui, `ZoneInfo("Africa/Casablanca")` lève `ZoneInfoNotFoundError`. Une base
-existante reçoit au démarrage la migration `0008_optional_rules` (colonne
-`required` des règles de complétude, valeur 1 pour les règles existantes), par le
-mécanisme de migration habituel, après la sauvegarde SQLite.
+sans lui, `ZoneInfo("Africa/Casablanca")` lève `ZoneInfoNotFoundError`.
 
 Compte : `admin.test@framatex.com`.
 
@@ -127,8 +136,9 @@ cookies HttpOnly et règles d'autorisation inchangés.
 .\scripts\diagnose_windows.cmd
 ```
 
-Affiche branche, SHA, Python, DB (URL externe masquée), migrations appliquées
-(SQLite `mode=ro`), ports/PID, ancien serveur, santé/identité et URL finale.
+Affiche branche, SHA, Python, configuration PostgreSQL masquée, ports/PID, ancien serveur,
+santé/identité et URL finale. Le contrôle détaillé du schéma se fait avec
+`.venv\Scripts\python.exe -m app.db check` après chargement de l'environnement.
 Appels externes bornés : budget inférieur à 30 s sur une machine normalement
 réactive. Aucun import `app.core`, donc aucune DB, clé, table ou migration créée.
 Une URL déclarée n'est pas présentée comme une preuve de disponibilité.
@@ -141,6 +151,10 @@ Une URL déclarée n'est pas présentée comme une preuve de disponibilité.
 .venv\Scripts\python.exe scripts\demo_full_platform.py
 .venv\Scripts\python.exe scripts\demo_browser_full.py
 ```
+
+Les tests courants exigent `DATABASE_URL` et les recettes exigent
+`FRAMATEX_RECETTE_DATABASE_URL`, toutes deux PostgreSQL. Aucune recette courante
+ne crée silencieusement une base SQLite.
 
 Les deux dernières commandes exécutent la même suite API + vrai Chromium + T+60,
 sur base temporaire. Captures 1440/1024/820/390 px ; cycle documentaire A/B existant
