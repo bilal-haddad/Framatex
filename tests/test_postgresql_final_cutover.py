@@ -47,7 +47,9 @@ def test_windows_launchers_are_postgresql_only_and_keep_typed_options():
     assert "$ErrorActionPreference = 'Continue'" in common
     assert "Invoke-FramatexNative $python @('-c','import psycopg, alembic') -Quiet" in common
     assert "print('Dependances PostgreSQL : OK')" in common
-    assert "FRAMATEX_PG_PASSWORD'].Length -lt 20" in common
+    assert "if (-not $values['FRAMATEX_PG_PASSWORD'])" in common
+    assert "FRAMATEX_PG_PASSWORD'].Length" not in common
+    assert "doit être renseigné dans .env" in common
     assert "[int]$Port" in wrapper
     assert all(f"[switch]${name}" in wrapper for name in ("Demo", "NoBrowser", "CheckOnly", "Reload"))
     assert "$start = @{ Port = $Port }" in wrapper and "@start" in wrapper

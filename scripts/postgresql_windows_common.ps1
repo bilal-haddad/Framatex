@@ -48,8 +48,8 @@ function Import-FramatexEnv([string]$DatabaseOverride = '', [string]$DataDirOver
         if ($values[$name] -notmatch '^[A-Za-z_][A-Za-z0-9_]{0,62}$') { throw "$name contient un identifiant PostgreSQL invalide." }
     }
     if (-not $values['FRAMATEX_DATA_DIR']) { throw 'FRAMATEX_DATA_DIR manquant dans .env.' }
-    if (-not $values['FRAMATEX_PG_PASSWORD'] -or $values['FRAMATEX_PG_PASSWORD'].Length -lt 20) {
-        throw 'FRAMATEX_PG_PASSWORD doit contenir au moins 20 caractères.'
+    if (-not $values['FRAMATEX_PG_PASSWORD']) {
+        throw 'FRAMATEX_PG_PASSWORD doit être renseigné dans .env.'
     }
     if (-not $values['FRAMATEX_PG_MODE']) { $values['FRAMATEX_PG_MODE'] = 'local' }
     if ($values['FRAMATEX_PG_MODE'] -ne 'local') {
